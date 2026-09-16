@@ -1,0 +1,109 @@
+name: Deploy Movune Production
+run-name: Deploy Movune Production from ${{ github.sha }}
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Validate and build exact public source
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+    steps:
+      - name: Authorize Production source
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Production releases must be dispatched from main; received $GITHUB_REF." >&2
+            exit 1
+          fi
+
+          if [[ -z "${VITE_API_BASE_URL:-}" ]]; then
+            echo "Repository variable VITE_API_BASE_URL is required for a Production release." >&2
+            exit 1
+          fi
+
+          if [[ "$VITE_API_BASE_URL" != https://* ]]; then
+            echo "VITE_API_BASE_URL must be a public HTTPS origin." >&2
+            exit 1
+          fi
+
+      - name: Checkout exact public source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Record release source
+        shell: bash
+        run: |
+          checked_out_sha="$(git rev-parse HEAD)"
+          if [[ "$checked_out_sha" != "$GITHUB_SHA" ]]; then
+            echo "Checked-out source $checked_out_sha does not match dispatch source $GITHUB_SHA." >&2
+            exit 1
+          fi
+
+          {
+            echo "### Movune Production release"
+            echo "- Source ref: \`$GITHUB_REF\`"
+            echo "- Source commit: \`$checked_out_sha\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Check frontend formatting
+        run: npm run format:check
+        working-directory: frontend
+
+      - name: Lint frontend
+        run: npm run lint
+        working-directory: frontend
+
+      - name: Type-check frontend
+        run: npm run typecheck
+        working-directory: frontend
+
+      - name: Build Production frontend
+        run: npm run build
+        working-directory: frontend
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: frontend/dist
+
+  deploy:
+    name: Deploy exact artifact to Production
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

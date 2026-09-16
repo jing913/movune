@@ -122,6 +122,17 @@ The currently deployed system uses:
 
 The public-source candidate is not deployed merely because it exists. Release changes remain separate from ordinary development changes, and future controlled-release automation is outside this document's current-state claims.
 
+### Prepared frontend release boundary
+
+The candidate prepares two independent GitHub Actions workflows:
+
+- `ci.yml` validates frontend formatting, linting, types, and build output plus the self-contained backend public suite. It can run for pull requests or by manual dispatch and cannot deploy.
+- `deploy-production.yml` is manual-only. It rejects any dispatch that is not based on `main`, checks out the exact `github.sha`, records that SHA in the workflow summary, validates and builds the frontend, uploads `frontend/dist`, and deploys through the protected `github-pages` environment.
+
+The Production build reads the public API origin from the repository variable `VITE_API_BASE_URL`; a missing or non-HTTPS value fails closed. Server credentials are never supplied to the frontend workflow. The Vite build retains the `/movune/` project base, and its existing post-build step copies `index.html` to `404.html` for SPA refresh fallback.
+
+This boundary is prepared but not active. The remote Pages source remains the existing `main` branch root until a later, separately authorized release checkpoint changes it to GitHub Actions. Neither workflow contains Render deployment logic.
+
 ## Source and Production lifecycle
 
 Three states must remain distinct:

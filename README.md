@@ -177,7 +177,13 @@ The current service topology is:
 - **Database:** MongoDB Atlas
 - **Movie metadata:** TMDB API, accessed by the backend
 
-Deployment is intentionally controlled and separated from ordinary development pushes. This repository does not yet document or include a future release-automation design as though it already exists.
+Deployment is intentionally controlled and separated from ordinary development pushes.
+
+- **Current:** Production still uses the existing GitHub Pages branch source and separately managed Render service.
+- **Prepared:** this source candidate contains validation-only CI and a manual-only `Deploy Movune Production` Pages workflow. The release workflow builds the exact dispatched `main` commit, requires the non-secret repository variable `VITE_API_BASE_URL`, and fails before artifact upload when the source or configuration is invalid.
+- **Not yet active:** these workflows remain local to the unpublished candidate. GitHub Pages has not been switched to GitHub Actions, the candidate has not been pushed or merged, and no Production release has occurred.
+
+The CI workflow can validate pull requests or be run manually, but it has no deployment permissions or deployment steps. The Production workflow has no push trigger. Render release migration is a separate operational boundary and is not implemented by either workflow.
 
 ## Documentation
 
