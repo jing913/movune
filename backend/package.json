@@ -1,0 +1,57 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "dev": "tsx watch --env-file=.env src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "start:local": "node --env-file=.env dist/server.js",
+    "format": "prettier --write \"src/**/*.{ts,json}\" \"test/**/*.mjs\" package.json",
+    "format:check": "prettier --check \"src/**/*.{ts,json}\" \"test/**/*.mjs\" package.json",
+    "lint": "eslint src",
+    "test": "npm run build && node --test test/collectionProjection.test.mjs test/contactAuthorizationContextService.test.mjs test/contactAuthorizationPolicy.test.mjs test/directConversationReadClassifier.test.mjs test/favoriteVisibility.test.mjs test/followNotification.test.mjs test/followPolicy.test.mjs test/frontendConfiguration.test.mjs test/logger.test.mjs test/messagingPolicy.test.mjs test/notificationPolicy.test.mjs test/profilePolicy.test.mjs test/refreshToken.test.mjs test/reportPolicy.test.mjs test/tmdbApi.test.mjs test/tmdbService.test.mjs",
+    "test:integration": "npm run build && node --test test/blockApi.test.mjs test/collectionApi.test.mjs test/collectionDeletedRecovery.test.mjs test/collectionMembershipApi.test.mjs test/collectionMovieMembershipLookup.test.mjs test/collectionPersistence.test.mjs test/directTransportContract.test.mjs test/favoritesResourceVisibility.test.mjs test/messagingIntegration.test.mjs"
+  },
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.6.2",
+    "http-status-codes": "^2.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.9.3",
+    "nodemailer": "^9.0.5",
+    "passport": "^0.7.0",
+    "passport-jwt": "^4.0.1",
+    "socket.io": "4.8.3",
+    "yup": "^1.7.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/bcrypt": "^6.0.0",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^24.13.3",
+    "@types/nodemailer": "^8.0.1",
+    "@types/passport": "^1.0.17",
+    "@types/passport-jwt": "^4.0.1",
+    "eslint": "^10.8.1",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "3.9.6",
+    "tsx": "^4.23.13",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.67.0"
+  }
+}
