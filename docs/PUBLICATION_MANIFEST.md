@@ -78,6 +78,17 @@ The prepared Pages workflow obtains the public Production API origin from the no
 - A later authorized activation must set `VITE_API_BASE_URL` and change the Pages source to GitHub Actions before public source is merged to `main`; otherwise the current branch-source binding would still deploy an ordinary `main` push.
 - Render deployment remains outside this frontend release boundary.
 
+## Prepared Render release boundary
+
+- The current Production service remains bound to the private `jing913/movune-source` repository on `demo/ui-preview`; the prepared public target is `jing913/movune` on `main`, rooted at `backend`.
+- Render Auto Deploy is currently off and must remain off. Neither an ordinary private-source push nor an ordinary public-source push is release authorization.
+- No Render API key, deploy hook, or GitHub Actions backend deployment job is included in this candidate.
+- The one-time repository-binding change is explicitly classified as a Production release action because Render documents that changing a backing repository automatically triggers a deploy.
+- After migration, routine backend releases use Render Dashboard's **Deploy a specific commit** control and record the public SHA and Render deployment metadata.
+- The existing Production environment was compared by variable name only. No Production value, hook URL, or credential was copied into this repository.
+- The backend defines Mongoose indexes and does not disable automatic index creation. Production index compatibility is therefore a mandatory pre-release Gate C; this preparation does not connect to or mutate the Production database.
+- The full future procedure and rollback limitations are recorded in [Release runbook](RELEASE_RUNBOOK.md). It is prepared documentation only and has not been activated.
+
 ## Documentation boundary
 
 Public documentation is deliberately small:
@@ -85,6 +96,7 @@ Public documentation is deliberately small:
 - `README.md` is the portfolio entry point;
 - `docs/ARCHITECTURE.md` explains the source candidate's technical boundaries;
 - this manifest records provenance and exclusions;
+- `docs/RELEASE_RUNBOOK.md` records the prepared, controlled Production release procedure;
 - `CONTRIBUTING.md` records maintenance and validation conventions.
 
 No private documentation library is mirrored into the public repository.

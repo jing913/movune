@@ -81,6 +81,7 @@ backend/
 docs/
   ARCHITECTURE.md          Technical overview and reviewer map
   PUBLICATION_MANIFEST.md  Publication and provenance boundary
+  RELEASE_RUNBOOK.md       Controlled frontend/backend release procedure
 ```
 
 ## Local Development
@@ -181,14 +182,16 @@ Deployment is intentionally controlled and separated from ordinary development p
 
 - **Current:** Production still uses the existing GitHub Pages branch source and separately managed Render service.
 - **Prepared:** this source candidate contains validation-only CI and a manual-only `Deploy Movune Production` Pages workflow. The release workflow builds the exact dispatched `main` commit, requires the non-secret repository variable `VITE_API_BASE_URL`, and fails before artifact upload when the source or configuration is invalid.
-- **Not yet active:** these workflows remain local to the unpublished candidate. GitHub Pages has not been switched to GitHub Actions, the candidate has not been pushed or merged, and no Production release has occurred.
+- **Prepared backend boundary:** the existing Render service is intended to remain on `Auto Deploy: Off`. After the one-time source-binding migration, routine backend releases use Render's authenticated Dashboard action to deploy one reviewed public commit by SHA.
+- **Not yet active:** these workflows and the Render target architecture remain local documentation in the unpublished candidate. GitHub Pages has not been switched to GitHub Actions, Render is still bound to the private development repository, the candidate has not been pushed or merged, and no Production release has occurred.
 
-The CI workflow can validate pull requests or be run manually, but it has no deployment permissions or deployment steps. The Production workflow has no push trigger. Render release migration is a separate operational boundary and is not implemented by either workflow.
+The CI workflow can validate pull requests or be run manually, but it has no deployment permissions or deployment steps. The Production workflow has no push trigger. Render release migration is a separate, human-authorized operational boundary and is not implemented by either workflow. See the [release runbook](docs/RELEASE_RUNBOOK.md) for the prepared—not active—transition and rollback procedure.
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) — system responsibilities, data relationships, and trust boundaries
 - [Publication manifest](docs/PUBLICATION_MANIFEST.md) — source, asset, secret, and exclusion provenance
+- [Release runbook](docs/RELEASE_RUNBOOK.md) — controlled Production activation, traceability, and rollback gates
 - [Repository conventions](CONTRIBUTING.md) — review and local validation expectations
 
 ## Portfolio / Usage Notice

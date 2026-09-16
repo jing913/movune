@@ -133,6 +133,19 @@ The Production build reads the public API origin from the repository variable `V
 
 This boundary is prepared but not active. The remote Pages source remains the existing `main` branch root until a later, separately authorized release checkpoint changes it to GitHub Actions. Neither workflow contains Render deployment logic.
 
+### Prepared backend release boundary
+
+The future Render target is the existing `movune` web service bound to `jing913/movune`, branch `main`, with `backend` as its root directory and Auto Deploy kept off. Ordinary pushes to either the private development repository or the public repository are not backend release authorization.
+
+There are two distinct operational phases:
+
+1. **One-time source migration.** Render documents that changing an existing service's backing repository automatically triggers a deploy. The later, separately authorized binding change must therefore be treated as the first backend release action—not as harmless configuration. Before that action, public `main` must be frozen at the reviewed release SHA, all compatibility gates must pass, and the existing Render baseline must be recorded.
+2. **Routine releases after migration.** An operator uses Render Dashboard's **Deploy a specific commit** action and supplies the reviewed public SHA. Auto Deploy remains off. The release record includes the public SHA, Render deployment ID, status, timestamp, and smoke result.
+
+No GitHub-to-Render API key, deploy hook, or deployment workflow is added. This keeps frontend and backend releases independent, avoids an additional Production secret, and makes a deliberate authenticated Dashboard action the authorization boundary.
+
+The complete prepared sequence, environment contract, database gate, acceptance record, and rollback steps are in [Release runbook](RELEASE_RUNBOOK.md). This architecture is not active in the current Production service.
+
 ## Source and Production lifecycle
 
 Three states must remain distinct:
@@ -141,7 +154,7 @@ Three states must remain distinct:
 2. **Public-source candidate** — reviewed source that may include completed but unreleased engineering.
 3. **Ongoing development** — later work that is neither automatically migrated into the candidate nor deployed.
 
-For publication provenance and deliberate exclusions, see [Publication manifest](PUBLICATION_MANIFEST.md).
+For publication provenance and deliberate exclusions, see [Publication manifest](PUBLICATION_MANIFEST.md). For the prepared Production activation procedure, see [Release runbook](RELEASE_RUNBOOK.md).
 
 ## Reviewer map
 
