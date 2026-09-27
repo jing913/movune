@@ -6,6 +6,7 @@ import { register } from '../dist/controllers/authController.js'
 import { errorHandler } from '../dist/middlewares/errorHandler.js'
 import {
   createRegistrationMigrationGate,
+  REGISTRATION_GATE_BLOCKED_EVENT,
   REGISTRATION_MIGRATION_GATE_RESPONSE,
   REGISTRATION_MIGRATION_GATE_STATUS,
   REGISTRATION_RELEASE_STATE,
@@ -21,7 +22,7 @@ const lockedResponse = {
 }
 
 const invokeGate = (state) => {
-  const recorded = { nextCalls: 0, status: undefined, body: undefined }
+  const recorded = { events: [], nextCalls: 0, status: undefined, body: undefined }
   const response = {
     status(value) {
       recorded.status = value
@@ -32,9 +33,13 @@ const invokeGate = (state) => {
       return this
     },
   }
-  createRegistrationMigrationGate(state)({}, response, () => {
-    recorded.nextCalls += 1
-  })
+  createRegistrationMigrationGate(state, (event) => recorded.events.push(event))(
+    {},
+    response,
+    () => {
+      recorded.nextCalls += 1
+    },
+  )
   return recorded
 }
 
@@ -77,6 +82,47 @@ describe('Registration migration gate', () => {
       assert.deepEqual(result.body, lockedResponse)
       assert.deepEqual(result.body, REGISTRATION_MIGRATION_GATE_RESPONSE)
       assert.equal(result.nextCalls, 0)
+      assert.equal(result.events.length, 1)
+    }
+  })
+
+  it('emits one privacy-safe structured rejection event before the legacy writer', () => {
+    const result = invokeGate('legacy-gate-on')
+    assert.deepEqual(result.events, [
+      {
+        event: REGISTRATION_GATE_BLOCKED_EVENT,
+        method: 'POST',
+        path: '/api/auth/register',
+        status: 503,
+        gateState: 'legacy-gate-on',
+      },
+    ])
+    assert.deepEqual(Object.keys(result.events[0]).sort(), [
+      'event',
+      'gateState',
+      'method',
+      'path',
+      'status',
+    ])
+
+    const serializedEvent = JSON.stringify(result.events[0])
+    for (const prohibitedField of [
+      'email',
+      'account',
+      'username',
+      'displayName',
+      'password',
+      'body',
+      'authorization',
+      'cookie',
+      'token',
+      'mongodb',
+      'credential',
+      'query',
+      'headers',
+      'ip',
+    ]) {
+      assert.equal(serializedEvent.toLowerCase().includes(prohibitedField.toLowerCase()), false)
     }
   })
 
@@ -85,6 +131,7 @@ describe('Registration migration gate', () => {
     assert.equal(result.nextCalls, 1)
     assert.equal(result.status, undefined)
     assert.equal(result.body, undefined)
+    assert.deepEqual(result.events, [])
   })
 
   it('fails closed for an unsupported runtime state', () => {
@@ -92,6 +139,7 @@ describe('Registration migration gate', () => {
     assert.equal(result.status, 503)
     assert.deepEqual(result.body, lockedResponse)
     assert.equal(result.nextCalls, 0)
+    assert.equal(result.events.length, 1)
   })
 
   it('places the production gate immediately before the sole registration writer', () => {
@@ -154,6 +202,34 @@ describe('Registration migration gate', () => {
       assert.equal(writerCalls, 1)
     } finally {
       await new Promise((resolve) => passThroughServer.close(resolve))
+    }
+  })
+
+  it('keeps a legacy Gate-ON writer unreachable while emitting exactly one event', async () => {
+    let writerCalls = 0
+    const events = []
+    const app = express()
+    app.post(
+      '/register',
+      createRegistrationMigrationGate('legacy-gate-on', (event) => events.push(event)),
+      (_req, res) => {
+        writerCalls += 1
+        res.status(204).end()
+      },
+    )
+    const blockedServer = app.listen(0, '127.0.0.1')
+    await new Promise((resolve) => blockedServer.once('listening', resolve))
+    try {
+      const address = blockedServer.address()
+      const response = await fetch(`http://127.0.0.1:${address.port}/register`, {
+        method: 'POST',
+      })
+      assert.equal(response.status, 503)
+      assert.deepEqual(await response.json(), lockedResponse)
+      assert.equal(writerCalls, 0)
+      assert.equal(events.length, 1)
+    } finally {
+      await new Promise((resolve) => blockedServer.close(resolve))
     }
   })
 })
