@@ -8,6 +8,7 @@ import {
   forgotPassword,
   resetPassword,
 } from '../controllers/authController.js'
+import { registrationMigrationGate } from '../middlewares/registrationMigrationGate.js'
 
 const router = express.Router()
 
@@ -21,7 +22,7 @@ const forgotPasswordLimiter = rateLimit({
   },
 })
 
-router.post('/register', register)
+router.post('/register', registrationMigrationGate, register)
 router.post('/login', login)
 router.post('/refresh', refresh)
 router.post('/logout', logout)

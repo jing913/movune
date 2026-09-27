@@ -8,6 +8,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "start:local": "node --env-file=.env dist/server.js",
+    "test:i4a:pure": "npm run build && node --test --test-concurrency=1 test/registrationMigrationGate.test.mjs",
+    "test:i4a:db:safe": "npm run build && node --test --test-concurrency=1 test/registrationMigrationGateIntegration.test.mjs",
     "format": "prettier --write \"src/**/*.{ts,json}\" \"test/**/*.mjs\" package.json",
     "format:check": "prettier --check \"src/**/*.{ts,json}\" \"test/**/*.mjs\" package.json",
     "lint": "eslint src",
