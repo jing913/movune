@@ -17,6 +17,10 @@ import {
   publishToUser,
 } from '../services/realtimeService.js'
 import { followContact, unfollowContact } from '../services/contactMutationService.js'
+import {
+  assertMemberSocialPairAccess,
+  memberSocialResourceNotFound,
+} from '../services/memberSocialAccessService.js'
 
 type FollowParams = {
   userId: string
@@ -134,10 +138,9 @@ export const getFollowSummary = async (
   }
 
   try {
+    await assertMemberSocialPairAccess(req.user._id.toString(), userId)
     const user = await findUserById(userId)
-    if (!user) {
-      return res.status(StatusCodes.NOT_FOUND).json({ message: 'User not found' })
-    }
+    if (!user) throw memberSocialResourceNotFound()
 
     const [followerCount, followingCount, currentFollow] = await Promise.all([
       Follow.countDocuments({ followingId: userId }),

@@ -357,7 +357,7 @@ describe('Contact Authorization safety properties', () => {
     assert.equal(input.conversation.state, 'pending')
   })
 
-  it('does not reproduce or expose unrelated Favorite disclosure state', () => {
+  it('does not reproduce or expose Phase 7 Favorite disclosure state', () => {
     const baseline = context({ targetMessageRequestPreference: 'followed_members' })
     const withPrivateFavoriteOverlap = {
       ...baseline,

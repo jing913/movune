@@ -38,6 +38,6 @@ router.get('/movie/:tmdbId/people', requireAuth, getMoviePeople)
 router.get('/:id/movie-space', requireAuth, getMovieSpace)
 router.get('/:id/movie-dna', requireAuth, getMovieDna)
 router.get('/:id/dna-match', requireAuth, getDnaMatch)
-router.get('/:id', getUser)
+router.get('/:id', requireAuth, getUser)
 
 export default router

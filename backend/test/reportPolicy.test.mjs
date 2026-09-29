@@ -4,7 +4,7 @@ import { parseReportRequest, REPORT_DESCRIPTION_MAX_LENGTH } from '../dist/utils
 
 const problem = (code, field) => (error) => error?.code === code && error?.details?.field === field
 
-describe('Report request policy', () => {
+describe('Official Stage 8 Report request policy', () => {
   it('accepts only the canonical reasons', () => {
     for (const reason of ['harassment_or_uncomfortable', 'spam_or_suspicious', 'other']) {
       assert.deepEqual(parseReportRequest({ reason }), { reason })

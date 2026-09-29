@@ -1,18 +1,11 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
 import { describe, it } from 'node:test'
-import mongoose, { Types } from 'mongoose'
+import { Types } from 'mongoose'
 import { Collection } from '../dist/models/collectionModel.js'
 import { CollectionMembership } from '../dist/models/collectionMembershipModel.js'
 import { Favorite } from '../dist/models/favoriteModel.js'
 import { User } from '../dist/models/userModel.js'
-
-async function databaseUrl() {
-  if (process.env.DB_URL) return process.env.DB_URL
-  const env = await readFile(new URL('../.env', import.meta.url), 'utf8')
-  const line = env.split(/\r?\n/).find((entry) => entry.startsWith('DB_URL='))
-  return line?.slice('DB_URL='.length)
-}
+import { createDatabaseTestHarness } from './helpers/databaseHarness.mjs'
 
 describe('Collection schema', () => {
   const ownerId = new Types.ObjectId()
@@ -60,23 +53,38 @@ describe('Collection schema', () => {
 })
 
 describe('Collection persistence invariants', { timeout: 60_000 }, () => {
-  it('keeps Collection membership, ordering, lifecycle, and Favorites independent', async (t) => {
-    const url = await databaseUrl()
-    if (!url) return t.skip('DB_URL is not configured')
-
-    await mongoose.connect(url)
-    await Promise.all([Collection.syncIndexes(), CollectionMembership.syncIndexes()])
-
-    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-    const user = await User.create({
-      account: `p7-collection-${suffix}`,
-      email: `p7-collection-${suffix}@test.invalid`,
-      password: 'not-used',
-      role: 'user',
-    })
+  it('keeps Collection membership, ordering, lifecycle, and Favorites independent', async () => {
+    const harness = createDatabaseTestHarness()
+    const userId = new Types.ObjectId()
     const collectionIds = []
+    let ready = false
 
     try {
+      await harness.connect()
+      ready = true
+      await harness.prepareIndexes([Collection, CollectionMembership])
+      harness.registerCleanup(async () => {
+        await CollectionMembership.deleteMany({ collectionId: { $in: collectionIds } })
+        await Collection.deleteMany({ _id: { $in: collectionIds } })
+        await Favorite.deleteMany({ userId })
+        await User.deleteOne({ _id: userId })
+        assert.equal(
+          await CollectionMembership.countDocuments({ collectionId: { $in: collectionIds } }),
+          0,
+        )
+        assert.equal(await Collection.countDocuments({ _id: { $in: collectionIds } }), 0)
+        assert.equal(await Favorite.countDocuments({ userId }), 0)
+        assert.equal(await User.countDocuments({ _id: userId }), 0)
+      })
+
+      const suffix = harness.runId
+      const user = await User.create({
+        _id: userId,
+        account: `p7-collection-${suffix}`,
+        email: `p7-collection-${suffix}@test.invalid`,
+        password: 'not-used',
+        role: 'user',
+      })
       const firstCollection = await Collection.create({
         ownerId: user._id,
         name: 'First Collection',
@@ -176,11 +184,11 @@ describe('Collection persistence invariants', { timeout: 60_000 }, () => {
         1,
       )
     } finally {
-      await CollectionMembership.deleteMany({ collectionId: { $in: collectionIds } })
-      await Collection.deleteMany({ _id: { $in: collectionIds } })
-      await Favorite.deleteMany({ userId: user._id })
-      await User.deleteOne({ _id: user._id })
-      await mongoose.disconnect()
+      try {
+        if (ready) await harness.runCleanup()
+      } finally {
+        await harness.close()
+      }
     }
   })
 })

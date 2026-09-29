@@ -9,6 +9,7 @@ import {
 import { calculateMatchV1, type MatchV1Favorite } from './matchV1Service.js'
 import { loadPeopleSocialMetadata, type PeopleSocialMetadata } from './peopleService.js'
 import { loadFavoritesForMatch } from '../utils/favoritesProcessingPolicy.js'
+import { loadEffectiveBlockedUserIds } from './memberSocialAccessService.js'
 
 type IdValue = {
   toString(): string
@@ -180,7 +181,13 @@ export const listFormalRecommendations = async (
     return emptyResult<FormalRecommendationItem>('insufficient_signal', page, limit)
   }
 
-  const candidates = await User.find({ _id: { $ne: viewerId } })
+  const blockedUserIds = await loadEffectiveBlockedUserIds(viewerId)
+  const candidates = await User.find({
+    _id: {
+      $ne: viewerId,
+      ...(blockedUserIds.size > 0 ? { $nin: [...blockedUserIds] } : {}),
+    },
+  })
     .select('account displayName avatar bio favoritesPublic')
     .lean()
   const candidateFavorites =

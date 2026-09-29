@@ -18,7 +18,7 @@ const context = (state, overrides = {}) => ({
   ...overrides,
 })
 
-describe('Direct Conversation read classifier', () => {
+describe('Stage 6 central Direct Conversation read classifier', () => {
   it('keeps the four persisted lifecycles in their frozen buckets', () => {
     assert.equal(classifyDirectConversationRead(context('unlocked'), true).bucket, 'conversations')
     assert.equal(classifyDirectConversationRead(context('pending'), true).bucket, 'requests')

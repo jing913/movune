@@ -4,6 +4,10 @@ import { isObjectIdOrHexString } from 'mongoose'
 import { Favorite } from '../models/favoriteModel.js'
 import { findUserById } from '../models/userModel.js'
 import { calculateMovieDna, shapeMovieDnaForViewer } from '../services/movieDnaService.js'
+import {
+  assertMemberSocialPairAccess,
+  memberSocialResourceNotFound,
+} from '../services/memberSocialAccessService.js'
 import { loadFavoritesForMovieDna } from '../utils/favoritesProcessingPolicy.js'
 
 type UserParams = {
@@ -21,10 +25,9 @@ export const getMovieDna = async (req: Request<UserParams>, res: Response, next:
   }
 
   try {
+    await assertMemberSocialPairAccess(req.user._id.toString(), userId)
     const user = await findUserById(userId)
-    if (!user) {
-      return res.status(StatusCodes.NOT_FOUND).json({ message: 'User not found' })
-    }
+    if (!user) throw memberSocialResourceNotFound()
 
     const favorites = await loadFavoritesForMovieDna(() =>
       Favorite.find({ userId }).select('genreIds').lean(),

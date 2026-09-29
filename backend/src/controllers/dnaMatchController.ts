@@ -5,6 +5,10 @@ import { Favorite } from '../models/favoriteModel.js'
 import { findUserById } from '../models/userModel.js'
 import { processDnaMatch, shapeDnaMatchForViewer } from '../services/dnaMatchService.js'
 import { getFavoritesVisibility } from '../services/favoritesVisibilityService.js'
+import {
+  assertMemberSocialPairAccess,
+  memberSocialResourceNotFound,
+} from '../services/memberSocialAccessService.js'
 import { loadFavoritesForMatch } from '../utils/favoritesProcessingPolicy.js'
 
 type UserParams = {
@@ -23,10 +27,9 @@ export const getDnaMatch = async (req: Request<UserParams>, res: Response, next:
 
   try {
     const viewerUserId = req.user._id
+    await assertMemberSocialPairAccess(viewerUserId.toString(), otherUserId)
     const otherUser = await findUserById(otherUserId)
-    if (!otherUser) {
-      return res.status(StatusCodes.NOT_FOUND).json({ message: 'User not found' })
-    }
+    if (!otherUser) throw memberSocialResourceNotFound()
 
     const [viewerFavorites, otherUserFavorites] = await Promise.all([
       loadFavoritesForMatch(() =>

@@ -21,6 +21,7 @@ import {
   parseReorderCollectionMemberships,
   parseUpdateCollection,
 } from '../utils/collectionValidation.js'
+import { memberSocialResourceNotFound } from '../services/memberSocialAccessService.js'
 
 type CollectionParams = {
   collectionId: string
@@ -82,11 +83,8 @@ export const getCollectionController = handler<Request<CollectionParams>>(async 
   const id = collectionId(req, res)
   if (!id) return
 
-  const collection = await getCollectionForViewer(id, req.user?._id)
-  if (!collection) {
-    sendCollectionNotFound(res)
-    return
-  }
+  const collection = await getCollectionForViewer(id, requireUser(req)._id)
+  if (!collection) throw memberSocialResourceNotFound()
 
   res.status(StatusCodes.OK).json({ collection })
 })

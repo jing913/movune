@@ -55,6 +55,17 @@ async function invoke(controller, { user, params = {}, body = {} } = {}) {
   return result
 }
 
+const neutralReadNotFound = {
+  status: 404,
+  body: {
+    error: {
+      code: 'RESOURCE_NOT_FOUND',
+      message: 'Resource not found',
+      details: undefined,
+    },
+  },
+}
+
 describe('Collection authorization policy', () => {
   const ownerId = new Types.ObjectId()
   const visitorId = new Types.ObjectId()
@@ -309,7 +320,7 @@ describe('Collection resource API boundary', { timeout: 60_000 }, () => {
     }
   })
 
-  it('serves owner Private detail and minimal anonymous or visitor Public detail', async () => {
+  it('serves owner Private detail and minimal authenticated visitor Public detail', async () => {
     const privateCollection = track(
       await Collection.create({ ownerId: owner._id, name: 'Owner private' }),
     )
@@ -335,32 +346,30 @@ describe('Collection resource API boundary', { timeout: 60_000 }, () => {
     assert.equal(ownerResponse.body.collection.visibility, 'private')
     assert.deepEqual(ownerResponse.body.collection.memberships, [{ tmdbId: 550, position: 0 }])
 
-    for (const user of [visitor, undefined]) {
-      const publicResponse = await invoke(getCollectionController, {
-        user,
-        params: { collectionId: publicCollection._id.toString() },
-      })
-      assert.equal(publicResponse.status, 200)
-      assert.equal(publicResponse.body.collection.name, 'Public detail')
-      assert.deepEqual(publicResponse.body.collection.memberships, [
-        { tmdbId: 13, position: 0 },
-        { tmdbId: 155, position: 1 },
-      ])
-      for (const hiddenField of [
-        'ownerId',
-        'visibility',
-        'lifecycleState',
-        'deletedAt',
-        'createdAt',
-        'updatedAt',
-      ]) {
-        assert.equal(hiddenField in publicResponse.body.collection, false)
-      }
-      assert.deepEqual(Object.keys(publicResponse.body.collection.memberships[0]).sort(), [
-        'position',
-        'tmdbId',
-      ])
+    const publicResponse = await invoke(getCollectionController, {
+      user: visitor,
+      params: { collectionId: publicCollection._id.toString() },
+    })
+    assert.equal(publicResponse.status, 200)
+    assert.equal(publicResponse.body.collection.name, 'Public detail')
+    assert.deepEqual(publicResponse.body.collection.memberships, [
+      { tmdbId: 13, position: 0 },
+      { tmdbId: 155, position: 1 },
+    ])
+    for (const hiddenField of [
+      'ownerId',
+      'visibility',
+      'lifecycleState',
+      'deletedAt',
+      'createdAt',
+      'updatedAt',
+    ]) {
+      assert.equal(hiddenField in publicResponse.body.collection, false)
     }
+    assert.deepEqual(Object.keys(publicResponse.body.collection.memberships[0]).sort(), [
+      'position',
+      'tmdbId',
+    ])
   })
 
   it('uses identical non-disclosure responses for private, deleted, and nonexistent detail', async () => {
@@ -390,11 +399,7 @@ describe('Collection resource API boundary', { timeout: 60_000 }, () => {
       ),
     )
 
-    assert.deepEqual(responses, [
-      { status: 404, body: { message: 'Collection not found' } },
-      { status: 404, body: { message: 'Collection not found' } },
-      { status: 404, body: { message: 'Collection not found' } },
-    ])
+    assert.deepEqual(responses, [neutralReadNotFound, neutralReadNotFound, neutralReadNotFound])
 
     assert.deepEqual(
       await invoke(getCollectionController, {
@@ -516,12 +521,12 @@ describe('Collection resource API boundary', { timeout: 60_000 }, () => {
       body: { message: 'Collection not found' },
     })
 
-    for (const user of [owner, visitor, undefined]) {
+    for (const user of [owner, visitor]) {
       const hidden = await invoke(getCollectionController, {
         user,
         params: { collectionId: collection._id.toString() },
       })
-      assert.deepEqual(hidden, { status: 404, body: { message: 'Collection not found' } })
+      assert.deepEqual(hidden, neutralReadNotFound)
     }
 
     const nonOwnerRestore = await invoke(restoreCollectionController, {

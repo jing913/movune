@@ -19,7 +19,11 @@ import {
   requireObjectId,
 } from '../utils/messagingPolicy.js'
 import { serializeMessage } from './messageSerialization.js'
-import { getContactAuthorizationContextInSession } from './contactAuthorizationContextService.js'
+import {
+  getContactAuthorizationContext,
+  getContactAuthorizationContextInSession,
+} from './contactAuthorizationContextService.js'
+import { serializeContactInteraction } from './contactInteractionSerialization.js'
 import { writeContactPairGuard } from './contactPairGuardService.js'
 import { getAuthoritativeMovieSnapshot } from './tmdbMetadataService.js'
 
@@ -96,14 +100,27 @@ export async function resolveDirect(userIdValue: string, otherUserIdValue: unkno
   const otherUserId = requireObjectId(otherUserIdValue, 'other user id')
   if (userId.equals(otherUserId))
     throw new ApiProblem(400, 'MESSAGE_INVALID', 'Cannot message yourself')
-  const other = await User.findById(otherUserId).select('account displayName avatar').lean()
+  const context = await getContactAuthorizationContext(userIdValue, otherUserId.toString())
+  const decision = evaluateContactAuthorization(context)
+  const [other, conversation] = await Promise.all([
+    User.findById(otherUserId).select('account displayName avatar').lean(),
+    DirectConversation.findOne({
+      participantKey: participantKey(userIdValue, otherUserId.toString()),
+    }).lean(),
+  ])
   if (!other) throw notFound()
-  const conversation = await DirectConversation.findOne({
-    participantKey: participantKey(userIdValue, otherUserIdValue as string),
-  }).lean()
   return {
     conversation: conversation ? await serializeDirectSummary(conversation, userId) : null,
     otherUser: serializeUser(other),
+    contactInteraction: serializeContactInteraction(
+      decision,
+      conversation && context.conversation
+        ? {
+            id: conversation._id.toString(),
+            state: context.conversation.state,
+          }
+        : undefined,
+    ),
   }
 }
 

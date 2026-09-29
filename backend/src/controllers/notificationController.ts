@@ -2,6 +2,8 @@ import type { NextFunction, Request, Response } from 'express'
 import { StatusCodes } from 'http-status-codes'
 import { isObjectIdOrHexString } from 'mongoose'
 import { Notification } from '../models/notificationModel.js'
+import type { ReportReason } from '../models/reportModel.js'
+import { User } from '../models/userModel.js'
 import { publishToUser } from '../services/realtimeService.js'
 import {
   buildNotificationCursorFilter,
@@ -26,6 +28,8 @@ type PopulatedActor = {
 type PopulatedReport = {
   _id: { toString(): string }
   reporterUserId: { toString(): string }
+  reportedUserId: { toString(): string }
+  reason: ReportReason
   sourceType: 'public_profile' | 'direct_conversation' | 'direct_message'
   messageEvidence?: {
     messageId: { toString(): string }
@@ -45,7 +49,19 @@ type NotificationRecord = {
   updatedAt: Date
 }
 
-const serializeNotification = (notification: NotificationRecord, recipientId: string) => {
+type ReportedUserProjection = {
+  _id: { toString(): string }
+  account: string
+  displayName?: string
+}
+
+const unavailableReportedUserLabel = '已停用的使用者'
+
+const serializeNotification = (
+  notification: NotificationRecord,
+  recipientId: string,
+  reportedUsers: ReadonlyMap<string, ReportedUserProjection>,
+) => {
   if (notification.type === 'report_submitted') {
     const report = notification.reportId
     if (!report || report.reporterUserId.toString() !== recipientId) {
@@ -54,26 +70,35 @@ const serializeNotification = (notification: NotificationRecord, recipientId: st
     if (report.sourceType === 'direct_message' && !report.messageEvidence) {
       throw new Error('Report notification message evidence invariant failed')
     }
+    const reportedUserId = report.reportedUserId.toString()
+    const reportedUser = reportedUsers.get(reportedUserId)
     return {
       id: notification._id.toString(),
       type: notification.type,
-      report: {
-        id: report._id.toString(),
-        sourceType: report.sourceType,
-        submittedAt: report.createdAt,
-      },
       readAt: notification.readAt,
       createdAt: notification.createdAt,
-      updatedAt: notification.updatedAt,
-      ...(report.sourceType === 'direct_message'
-        ? {
-            message: {
-              id: report.messageEvidence!.messageId.toString(),
-              content: report.messageEvidence!.content,
-              sentAt: report.messageEvidence!.sentAt,
-            },
-          }
-        : {}),
+      report: {
+        reportId: report._id.toString(),
+        sourceType: report.sourceType,
+        reason: report.reason,
+        submittedAt: report.createdAt,
+        reportedUser: {
+          id: reportedUserId,
+          displayName:
+            reportedUser?.displayName?.trim() ||
+            reportedUser?.account ||
+            unavailableReportedUserLabel,
+        },
+        ...(report.sourceType === 'direct_message'
+          ? {
+              message: {
+                id: report.messageEvidence!.messageId.toString(),
+                content: report.messageEvidence!.content,
+                sentAt: report.messageEvidence!.sentAt,
+              },
+            }
+          : {}),
+      },
     }
   }
 
@@ -124,7 +149,7 @@ export const getNotifications = async (req: Request, res: Response, next: NextFu
         .populate({
           path: 'reportId',
           match: { reporterUserId: req.user._id },
-          select: 'reporterUserId sourceType messageEvidence createdAt',
+          select: 'reporterUserId reportedUserId reason sourceType messageEvidence createdAt',
         })
         .lean(),
       Notification.countDocuments({ recipientId: req.user._id, readAt: null }),
@@ -132,10 +157,26 @@ export const getNotifications = async (req: Request, res: Response, next: NextFu
     const hasMore = records.length > limit
     const page = records.slice(0, limit) as unknown as NotificationRecord[]
     const last = page.at(-1)
+    const reportedUserIds = [
+      ...new Set(
+        page.flatMap((notification) => {
+          const report = notification.type === 'report_submitted' ? notification.reportId : null
+          return report ? [report.reportedUserId.toString()] : []
+        }),
+      ),
+    ]
+    const reportedUserRecords = reportedUserIds.length
+      ? ((await User.find({ _id: { $in: reportedUserIds } })
+          .select('_id account displayName')
+          .lean()) as unknown as ReportedUserProjection[])
+      : []
+    const reportedUsers = new Map(
+      reportedUserRecords.map((user) => [user._id.toString(), user] as const),
+    )
 
     return res.status(StatusCodes.OK).json({
       notifications: page.map((notification) =>
-        serializeNotification(notification, req.user!._id.toString()),
+        serializeNotification(notification, req.user!._id.toString(), reportedUsers),
       ),
       unreadCount,
       nextCursor:

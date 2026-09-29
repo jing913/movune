@@ -29,7 +29,7 @@ async function databaseUrl() {
 }
 
 test(
-  'Messaging transaction, lifecycle, idempotency, and read invariants',
+  'Phase 6 transaction, lifecycle, idempotency, and read invariants',
   { timeout: 60_000 },
   async (t) => {
     const url = await databaseUrl()
@@ -174,7 +174,7 @@ test(
 
       const room = await DiscussionRoom.create({
         tmdbId: Number(String(Date.now()).slice(-8)),
-        movieSnapshot: { title: 'Messaging Test Movie', posterPath: null },
+        movieSnapshot: { title: 'Phase 6 Test Movie', posterPath: null },
       })
       roomId = room._id
       await assert.rejects(

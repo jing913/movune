@@ -14,7 +14,7 @@ import { Message } from '../dist/models/messageModel.js'
 import { UserBlock } from '../dist/models/userBlockModel.js'
 import { User } from '../dist/models/userModel.js'
 
-process.env.JWT_SECRET ??= 'direct-transport-contract-test-secret'
+process.env.JWT_SECRET ??= 'phase8-direct-transport-contract-test-secret'
 await import('../dist/configs/passport.js')
 const { directRouter } = await import('../dist/routes/messaging.js')
 
@@ -79,6 +79,27 @@ const assertConversationDto = (conversation, interactionState) => {
   }
 }
 
+const assertContactInteraction = (contactInteraction, interactionState) => {
+  assert.equal(contactInteraction.interactionState, interactionState)
+  assert.deepEqual(Object.keys(contactInteraction.capabilities).sort(), [
+    'canBlockUser',
+    'canCreateMessageRequest',
+    'canFollowUser',
+    'canReportUser',
+    'canSendMessage',
+    'canUnblockUser',
+  ])
+  for (const forbidden of [
+    'messageRequestPreference',
+    'actorFollowsTarget',
+    'targetFollowsActor',
+    'reason',
+    'capabilityReasons',
+  ]) {
+    assert.equal(JSON.stringify(contactInteraction).includes(forbidden), false)
+  }
+}
+
 const assertProblem = async (response, status, code) => {
   assert.equal(response.status, status)
   const body = await response.json()
@@ -86,7 +107,7 @@ const assertProblem = async (response, status, code) => {
   return body
 }
 
-describe('Direct transport contract', { timeout: 120_000 }, () => {
+describe('Official Phase 8 Direct transport contract correction', { timeout: 120_000 }, () => {
   let server
   let baseUrl
   const userIds = []
@@ -194,6 +215,69 @@ describe('Direct transport contract', { timeout: 120_000 }, () => {
       assert.deepEqual(body.error.details, { field: 'conversationId' })
       assert.equal(JSON.stringify(body).includes(malformed), false)
     }
+  })
+
+  it('Resolve is side-effect free and returns authoritative actor-relative contact capabilities', async () => {
+    const [sender, recipient] = await createUsers()
+    const path = '/api/direct-conversations/resolve'
+    const input = {
+      method: 'POST',
+      token: tokenFor(sender),
+      body: { otherUserId: recipient._id.toString() },
+    }
+    const before = {
+      conversations: await DirectConversation.countDocuments({
+        participantIds: { $all: [sender._id, recipient._id] },
+      }),
+      messages: await Message.countDocuments({ senderId: sender._id }),
+    }
+
+    let response = await request(baseUrl, path, input)
+    assert.equal(response.status, 200)
+    let body = await response.json()
+    assert.deepEqual(Object.keys(body).sort(), ['contactInteraction', 'conversation', 'otherUser'])
+    assert.equal(body.conversation, null)
+    assertContactInteraction(body.contactInteraction, 'request_allowed')
+    assert.equal(body.contactInteraction.capabilities.canCreateMessageRequest, true)
+    assert.equal(body.contactInteraction.capabilities.canSendMessage, false)
+
+    await User.updateOne(
+      { _id: recipient._id },
+      { $set: { messageRequestPreference: 'followed_members' } },
+    )
+    response = await request(baseUrl, path, input)
+    body = await response.json()
+    assertContactInteraction(body.contactInteraction, 'none')
+    assert.equal(body.contactInteraction.capabilities.canCreateMessageRequest, false)
+    assert.equal(body.contactInteraction.capabilities.canSendMessage, false)
+
+    await Follow.create({ followerId: recipient._id, followingId: sender._id })
+    response = await request(baseUrl, path, input)
+    body = await response.json()
+    assertContactInteraction(body.contactInteraction, 'direct_allowed')
+    assert.equal(body.contactInteraction.capabilities.canCreateMessageRequest, false)
+    assert.equal(body.contactInteraction.capabilities.canSendMessage, true)
+
+    assert.deepEqual(
+      {
+        conversations: await DirectConversation.countDocuments({
+          participantIds: { $all: [sender._id, recipient._id] },
+        }),
+        messages: await Message.countDocuments({ senderId: sender._id }),
+      },
+      before,
+    )
+
+    const first = await sendFirst(sender, recipient, 'resolve-existing-unlocked')
+    response = await request(baseUrl, path, input)
+    body = await response.json()
+    assert.equal(body.conversation.id, first.conversation.id)
+    assertContactInteraction(body.contactInteraction, 'unlocked')
+    assert.deepEqual(body.contactInteraction.conversation, {
+      id: first.conversation.id,
+      state: 'unlocked',
+    })
+    assert.equal(body.contactInteraction.capabilities.canSendMessage, true)
   })
 
   it('returns neutral resources and preserves recipient-only resolution authorization', async () => {

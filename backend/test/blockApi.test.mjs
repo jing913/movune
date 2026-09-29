@@ -14,7 +14,7 @@ import { Message } from '../dist/models/messageModel.js'
 import { UserBlock } from '../dist/models/userBlockModel.js'
 import { User } from '../dist/models/userModel.js'
 
-const jwtSecret = 'block-api-test-secret'
+const jwtSecret = 'phase8-stage5-block-api-test-secret'
 process.env.JWT_SECRET ??= jwtSecret
 await import('../dist/configs/passport.js')
 const { default: userRouter } = await import('../dist/routes/user.js')
@@ -80,7 +80,7 @@ const assertContactInteractionShape = (value, { conversation = true } = {}) => {
   }
 }
 
-describe('Block API authorization boundary', { timeout: 90_000 }, () => {
+describe('Phase 8 Stage 5 Block API', { timeout: 90_000 }, () => {
   let actor
   let target
   let noConversationTarget
@@ -92,7 +92,7 @@ describe('Block API authorization boundary', { timeout: 90_000 }, () => {
 
   before(async () => {
     const url = await databaseUrl()
-    if (!url) throw new Error('DB_URL is required for Block API integration tests')
+    if (!url) throw new Error('DB_URL is required for Stage 5 Block API tests')
     await mongoose.connect(url)
     for (const model of [
       ContactPairGuard,
@@ -107,20 +107,20 @@ describe('Block API authorization boundary', { timeout: 90_000 }, () => {
     const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
     ;[actor, target, noConversationTarget] = await User.create([
       {
-        account: `block-actor-${suffix}`,
-        email: `block-actor-${suffix}@test.invalid`,
+        account: `p8s5-block-actor-${suffix}`,
+        email: `p8s5-block-actor-${suffix}@test.invalid`,
         password: 'not-used',
         role: 'user',
       },
       {
-        account: `block-target-${suffix}`,
-        email: `block-target-${suffix}@test.invalid`,
+        account: `p8s5-block-target-${suffix}`,
+        email: `p8s5-block-target-${suffix}@test.invalid`,
         password: 'not-used',
         role: 'user',
       },
       {
-        account: `block-empty-${suffix}`,
-        email: `block-empty-${suffix}@test.invalid`,
+        account: `p8s5-block-empty-${suffix}`,
+        email: `p8s5-block-empty-${suffix}@test.invalid`,
         password: 'not-used',
         role: 'user',
       },
@@ -193,7 +193,7 @@ describe('Block API authorization boundary', { timeout: 90_000 }, () => {
     assert.equal(messaging.status, 400)
     assert.equal((await messaging.json()).error.code, 'MESSAGE_INVALID')
 
-    const legacyUser = await request(baseUrl, `/api/users/${malformed}`)
+    const legacyUser = await request(baseUrl, `/api/users/${malformed}`, { token: actorToken })
     assert.equal(legacyUser.status, 400)
     assert.deepEqual(await legacyUser.json(), { message: 'Invalid user id' })
   })

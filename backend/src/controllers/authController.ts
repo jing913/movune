@@ -15,6 +15,8 @@ import {
 } from '../utils/refreshToken.js'
 import { sendPasswordResetEmail } from '../services/emailService.js'
 import { createFrontendApplicationUrl } from '../configs/frontendConfiguration.js'
+import { RegistrationConflictError, registerUser } from '../services/registrationService.js'
+import { IdentifierPolicyError } from '../utils/identifierPolicy.js'
 
 const PASSWORD_RESET_TOKEN_TTL_MS = 30 * 60 * 1000
 const FORGOT_PASSWORD_MESSAGE = '如果此 Email 已註冊，我們會寄送密碼重設連結。'
@@ -22,7 +24,7 @@ const INVALID_RESET_TOKEN_MESSAGE = '密碼重設連結無效或已過期'
 
 const registerSchema = yup.object({
   account: yup.string().required(),
-  email: yup.string().required().email(),
+  email: yup.string().trim().required().email(),
   password: yup.string().required().min(8),
 })
 
@@ -48,7 +50,19 @@ const resetPasswordSchema = yup.object({
 export const register = async (req: Request, res: Response) => {
   const parsedBody = await registerSchema.validate(req.body, { stripUnknown: true })
 
-  await User.create(parsedBody)
+  try {
+    await registerUser(parsedBody)
+  } catch (error) {
+    if (error instanceof IdentifierPolicyError) {
+      res.status(StatusCodes.BAD_REQUEST).json({ message: error.message })
+      return
+    }
+    if (error instanceof RegistrationConflictError) {
+      res.status(StatusCodes.CONFLICT).json({ message: error.message, code: error.code })
+      return
+    }
+    throw error
+  }
 
   res.status(StatusCodes.CREATED).json({
     message: 'Register successful',

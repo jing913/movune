@@ -178,7 +178,10 @@ describe('Favorites Resource visibility API and privacy', { timeout: 60_000 }, (
       user: owner,
       body: { visibility: 'private' },
     })
-    const publicUser = await invoke(getUser, { params: { id: owner._id.toString() } })
+    const publicUser = await invoke(getUser, {
+      user: visitor,
+      params: { id: owner._id.toString() },
+    })
     const movieSpace = await invoke(getMovieSpace, {
       user: visitor,
       params: { id: owner._id.toString() },

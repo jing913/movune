@@ -14,6 +14,10 @@ import type {
   UpdateCollectionInput,
 } from '../utils/collectionValidation.js'
 import { ApiProblem } from '../utils/messagingPolicy.js'
+import {
+  assertMemberSocialPairAccess,
+  memberSocialResourceNotFound,
+} from './memberSocialAccessService.js'
 
 const { connection } = mongoose
 
@@ -327,17 +331,19 @@ export const listPublicCollectionsForOwner = async (ownerId: Types.ObjectId) => 
   )
 }
 
-export const getCollectionForViewer = async (
-  collectionId: string,
-  viewerId?: Types.ObjectId | null,
-) => {
+export const getCollectionForViewer = async (collectionId: string, viewerId: Types.ObjectId) => {
+  const ownerReference = await Collection.findById(collectionId).select('ownerId').lean()
+  if (!ownerReference) throw memberSocialResourceNotFound()
+
+  await assertMemberSocialPairAccess(viewerId.toString(), ownerReference.ownerId.toString())
+
   const collection = await Collection.findById(collectionId).lean()
   if (!collection || !canViewCollection(collection, viewerId)) return undefined
 
   const memberships = canViewCollectionMembership(collection, viewerId)
     ? await loadMemberships(collection._id)
     : []
-  const owner = collection.ownerId.toString() === viewerId?.toString()
+  const owner = collection.ownerId.toString() === viewerId.toString()
 
   return owner
     ? shapeOwnerCollection(collection as CollectionValue, memberships)

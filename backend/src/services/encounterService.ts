@@ -9,6 +9,7 @@ import {
   type SharedDnaGenre,
 } from './matchExplanationService.js'
 import { calculateMatchV1, type MatchV1Favorite } from './matchV1Service.js'
+import { loadEffectiveBlockedUserIds } from './memberSocialAccessService.js'
 import { loadPeopleSocialMetadata, type PeopleSocialMetadata } from './peopleService.js'
 
 type IdValue = {
@@ -187,7 +188,13 @@ export const listEncounterCandidates = async (
     return { status: 'insufficient_signal', candidates: [] } satisfies EncounterRoundResult
   }
 
-  const candidates = await User.find({ _id: { $ne: viewerId } })
+  const blockedUserIds = await loadEffectiveBlockedUserIds(viewerId)
+  const candidates = await User.find({
+    _id: {
+      $ne: viewerId,
+      ...(blockedUserIds.size > 0 ? { $nin: [...blockedUserIds] } : {}),
+    },
+  })
     .select('account displayName avatar bio favoritesPublic')
     .lean()
   const candidateFavorites =

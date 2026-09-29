@@ -21,6 +21,7 @@ import { DiscussionRoom } from './models/discussionRoomModel.js'
 import tmdbRouter from './routes/tmdb.js'
 import { getFrontendConfiguration } from './configs/frontendConfiguration.js'
 import collectionRouter from './routes/collection.js'
+import registrationAcceptanceRouter from './routes/registrationAcceptance.js'
 
 const app = express()
 const { verify } = jsonwebtoken
@@ -73,6 +74,7 @@ app.use('/api/direct-conversations', directRouter)
 app.use('/api/messages', messageRouter)
 app.use('/api/discussion-rooms', discussionRouter)
 app.use('/api/tmdb', tmdbRouter)
+app.use('/api/operations/phase9/registration-acceptance', registrationAcceptanceRouter)
 
 app.get('/', (_req, res) => {
   res.send('Movune API is running')

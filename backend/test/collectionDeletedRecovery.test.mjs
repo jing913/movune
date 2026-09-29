@@ -50,6 +50,17 @@ async function invoke(controller, { user, params = {} } = {}) {
   return result
 }
 
+const neutralReadNotFound = {
+  status: 404,
+  body: {
+    error: {
+      code: 'RESOURCE_NOT_FOUND',
+      message: 'Resource not found',
+      details: undefined,
+    },
+  },
+}
+
 describe('deleted Collection recovery read API', { timeout: 60_000 }, () => {
   let owner
   let otherOwner
@@ -232,10 +243,10 @@ describe('deleted Collection recovery read API', { timeout: 60_000 }, () => {
     const deleted = await Collection.findOne({ ownerId: owner._id, name: 'Older public' })
     const deletedId = deleted._id.toString()
 
-    for (const user of [owner, otherOwner, undefined]) {
+    for (const user of [owner, otherOwner]) {
       assert.deepEqual(
         await invoke(getCollectionController, { user, params: { collectionId: deletedId } }),
-        { status: 404, body: { message: 'Collection not found' } },
+        neutralReadNotFound,
       )
     }
 

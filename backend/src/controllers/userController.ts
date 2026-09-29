@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from 'express'
 import { StatusCodes } from 'http-status-codes'
-import { isObjectIdOrHexString, type QueryFilter } from 'mongoose'
+import { isObjectIdOrHexString, Types, type QueryFilter } from 'mongoose'
 import { Favorite } from '../models/favoriteModel.js'
 import { Follow } from '../models/followModel.js'
 import { findUserById, User, type IUser } from '../models/userModel.js'
@@ -25,6 +25,11 @@ import {
   readMessagingPrivacy,
   updateMessagingPrivacy,
 } from '../services/messagingPrivacyService.js'
+import {
+  assertMemberSocialPairAccess,
+  loadEffectiveBlockedUserIds,
+  memberSocialResourceNotFound,
+} from '../services/memberSocialAccessService.js'
 
 type UserParams = {
   id: string
@@ -81,20 +86,27 @@ const serializePublicUser = (user: Express.User) => ({
   bio: user.bio,
 })
 
-export const getUser = async (req: Request<UserParams>, res: Response) => {
+export const getUser = async (req: Request<UserParams>, res: Response, next: NextFunction) => {
   const id = req.params.id
   if (!isObjectIdOrHexString(id)) {
     return res.status(StatusCodes.BAD_REQUEST).json({ message: 'Invalid user id' })
   }
 
-  const user = await findUserById(id)
-  if (!user) {
-    return res.status(StatusCodes.NOT_FOUND).json({ message: 'User not found' })
+  if (!req.user) {
+    return res.status(StatusCodes.UNAUTHORIZED).json({ message: 'Unauthorized' })
   }
 
-  res.status(StatusCodes.OK).json({
-    user: serializePublicUser(user),
-  })
+  try {
+    await assertMemberSocialPairAccess(req.user._id.toString(), id)
+    const user = await findUserById(id)
+    if (!user) throw memberSocialResourceNotFound()
+
+    return res.status(StatusCodes.OK).json({
+      user: serializePublicUser(user),
+    })
+  } catch (error) {
+    next(error)
+  }
 }
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -144,6 +156,12 @@ export const getUsers = async (
 
   try {
     const idConstraints: QueryFilter<IUser>[] = []
+    const blockedUserIds = await loadEffectiveBlockedUserIds(req.user._id)
+    if (blockedUserIds.size > 0) {
+      idConstraints.push({
+        _id: { $nin: [...blockedUserIds].map((userId) => new Types.ObjectId(userId)) },
+      })
+    }
 
     if (following !== 'all') {
       const followingIds = await Follow.distinct('followingId', { followerId: req.user._id })
@@ -234,8 +252,13 @@ export const getMoviePeople = async (
 
   try {
     const favoriteOwnerIds = await Favorite.distinct('userId', { tmdbId })
+    const blockedUserIds = await loadEffectiveBlockedUserIds(req.user._id)
     const filter: QueryFilter<IUser> = {
-      _id: { $in: favoriteOwnerIds, $ne: req.user._id },
+      _id: {
+        $in: favoriteOwnerIds,
+        $ne: req.user._id,
+        ...(blockedUserIds.size > 0 ? { $nin: [...blockedUserIds] } : {}),
+      },
       ...PUBLIC_FAVORITES_PERSISTENCE_MATCH,
     }
     const [users, total] = await Promise.all([
@@ -402,10 +425,9 @@ export const getMovieSpace = async (
   }
 
   try {
+    await assertMemberSocialPairAccess(req.user._id.toString(), id)
     const user = await findUserById(id)
-    if (!user) {
-      return res.status(StatusCodes.NOT_FOUND).json({ message: 'User not found' })
-    }
+    if (!user) throw memberSocialResourceNotFound()
 
     const visibility = getFavoritesVisibility(user)
     const [favorites, collections] = await Promise.all([

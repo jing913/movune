@@ -2,19 +2,27 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "",
-  "private": true,
   "scripts": {
     "dev": "tsx watch --env-file=.env src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "start:local": "node --env-file=.env dist/server.js",
+    "migration:identifier-claims": "node dist/tools/runIdentifierClaimMigration.js",
+    "test:db:safe": "npm run build && node --test --test-concurrency=1 test/databaseHarness.test.mjs test/collectionPersistence.test.mjs",
+    "test:i3:pure": "npm run build && node --test --test-concurrency=1 test/identifierClaimMigration.test.mjs",
+    "test:i3:db:safe": "npm run build && node --test --test-concurrency=1 test/identifierClaimMigrationIntegration.test.mjs",
     "test:i4a:pure": "npm run build && node --test --test-concurrency=1 test/registrationMigrationGate.test.mjs",
     "test:i4a:db:safe": "npm run build && node --test --test-concurrency=1 test/registrationMigrationGateIntegration.test.mjs",
+    "test:i4b:pure": "npm run build && node --test --test-concurrency=1 test/registrationService.test.mjs test/registrationMigrationGate.test.mjs test/identifierPolicy.test.mjs test/identifierClaimPersistence.test.mjs",
+    "test:i4b:db:safe": "npm run build && node --test --test-concurrency=1 test/registrationServiceIntegration.test.mjs test/registrationMigrationGateIntegration.test.mjs",
+    "test:i4c:pure": "npm run build && node --test --test-concurrency=1 test/registrationAcceptance.test.mjs",
+    "test:i4c:db:safe": "npm run build && node --test --test-concurrency=1 test/registrationAcceptanceIntegration.test.mjs",
+    "i4c:capability": "node dist/tools/runRegistrationAcceptanceCapability.js",
+    "i4c:verify": "node dist/tools/runRegistrationAcceptanceVerification.js",
     "format": "prettier --write \"src/**/*.{ts,json}\" \"test/**/*.mjs\" package.json",
     "format:check": "prettier --check \"src/**/*.{ts,json}\" \"test/**/*.mjs\" package.json",
     "lint": "eslint src",
-    "test": "npm run build && node --test test/collectionProjection.test.mjs test/contactAuthorizationContextService.test.mjs test/contactAuthorizationPolicy.test.mjs test/directConversationReadClassifier.test.mjs test/favoriteVisibility.test.mjs test/followNotification.test.mjs test/followPolicy.test.mjs test/frontendConfiguration.test.mjs test/logger.test.mjs test/messagingPolicy.test.mjs test/notificationPolicy.test.mjs test/profilePolicy.test.mjs test/refreshToken.test.mjs test/reportPolicy.test.mjs test/tmdbApi.test.mjs test/tmdbService.test.mjs",
-    "test:integration": "npm run build && node --test test/blockApi.test.mjs test/collectionApi.test.mjs test/collectionDeletedRecovery.test.mjs test/collectionMembershipApi.test.mjs test/collectionMovieMembershipLookup.test.mjs test/collectionPersistence.test.mjs test/directTransportContract.test.mjs test/favoritesResourceVisibility.test.mjs test/messagingIntegration.test.mjs"
+    "test": "npm run build && node --test test/collectionDeletedRecovery.test.mjs test/collectionMovieMembershipLookup.test.mjs test/collectionMembershipApi.test.mjs test/collectionApi.test.mjs test/collectionPersistence.test.mjs test/collectionProjection.test.mjs test/contextualPeople.test.mjs test/discoveryPeople.test.mjs test/dnaMatch.test.mjs test/encounterPolicy.test.mjs test/favoritesResourceVisibility.test.mjs test/favoriteVisibility.test.mjs test/followNotification.test.mjs test/followPolicy.test.mjs test/formalRecommendation.test.mjs test/matchExplanation.test.mjs test/matchV1.test.mjs test/movieDna.test.mjs test/notificationPolicy.test.mjs test/peopleSort.test.mjs test/profilePolicy.test.mjs test/refreshToken.test.mjs test/messagingPolicy.test.mjs test/frontendConfiguration.test.mjs test/tmdbApi.test.mjs test/tmdbService.test.mjs test/messagingIntegration.test.mjs test/accountEnforcementPolicy.test.mjs test/accountEnforcementPersistence.test.mjs test/accountEnforcementIntegration.test.mjs test/identifierPolicy.test.mjs test/identifierClaimPersistence.test.mjs test/identifierClaimMigration.test.mjs test/registrationMigrationGate.test.mjs test/registrationService.test.mjs"
   },
   "engines": {
     "node": ">=24 <25",
@@ -22,6 +30,7 @@
   },
   "keywords": [],
   "author": "",
+  "license": "ISC",
   "type": "module",
   "dependencies": {
     "bcrypt": "^6.0.0",
