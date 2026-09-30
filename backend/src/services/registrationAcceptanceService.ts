@@ -1,4 +1,4 @@
-import mongoose, { Types, type ClientSession } from 'mongoose'
+import mongoose, { Types, type ClientSession, type Connection } from 'mongoose'
 import { AccountEnforcementAction } from '../models/accountEnforcementActionModel.js'
 import { CollectionMembership } from '../models/collectionMembershipModel.js'
 import { Collection } from '../models/collectionModel.js'
@@ -65,9 +65,67 @@ type RegistrationEnvelope = RequestEnvelope & RegistrationRequest
 
 type RunDocument = IRegistrationAcceptanceRun & { _id: string }
 
-// Mongoose's overloaded model methods lose the string `_id` type under this strict schema.
+// The acceptance service intentionally supports models bound to an explicit Mongoose connection.
+// Mongoose's heterogeneous model overloads are not representable as one useful structural type.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const acceptanceRunModel = RegistrationAcceptanceRun as any
+type AcceptanceModel = any
+
+export type RegistrationAcceptanceModels = Readonly<{
+  AccountEnforcementAction: AcceptanceModel
+  CollectionMembership: AcceptanceModel
+  Collection: AcceptanceModel
+  ContactPairGuard: AcceptanceModel
+  DirectConversation: AcceptanceModel
+  DirectConversationState: AcceptanceModel
+  DiscussionMembership: AcceptanceModel
+  DiscussionRoom: AcceptanceModel
+  Favorite: AcceptanceModel
+  Follow: AcceptanceModel
+  IdentifierClaim: AcceptanceModel
+  Message: AcceptanceModel
+  Notification: AcceptanceModel
+  PasswordResetToken: AcceptanceModel
+  RegistrationAcceptanceRun: AcceptanceModel
+  RefreshToken: AcceptanceModel
+  Report: AcceptanceModel
+  UserBlock: AcceptanceModel
+  User: AcceptanceModel
+}>
+
+const defaultModels: RegistrationAcceptanceModels = Object.freeze({
+  AccountEnforcementAction,
+  CollectionMembership,
+  Collection,
+  ContactPairGuard,
+  DirectConversation,
+  DirectConversationState,
+  DiscussionMembership,
+  DiscussionRoom,
+  Favorite,
+  Follow,
+  IdentifierClaim,
+  Message,
+  Notification,
+  PasswordResetToken,
+  RegistrationAcceptanceRun,
+  RefreshToken,
+  Report,
+  UserBlock,
+  User,
+})
+
+const bindModel = (connection: Connection, source: AcceptanceModel) =>
+  connection.models[source.modelName] ??
+  connection.model(source.modelName, source.schema, source.collection.name)
+
+export const createRegistrationAcceptanceModels = (
+  connection: Connection,
+): RegistrationAcceptanceModels =>
+  Object.freeze(
+    Object.fromEntries(
+      Object.entries(defaultModels).map(([name, source]) => [name, bindModel(connection, source)]),
+    ) as unknown as RegistrationAcceptanceModels,
+  )
 
 export type PristineInspection = Readonly<{
   outcome: 'pristine' | 'zero' | 'partial'
@@ -78,6 +136,8 @@ export type PristineInspection = Readonly<{
 export type RegistrationAcceptanceDependencies = Readonly<{
   registrationWriter?: (input: RegistrationInput) => Promise<Readonly<{ userId: Types.ObjectId }>>
   now?: () => Date
+  models?: RegistrationAcceptanceModels
+  transactionRunner?: (operation: (session: ClientSession) => Promise<void>) => Promise<unknown>
 }>
 
 const event = (manifest: RegistrationAcceptanceManifest, outcome: string, now: Date) => ({
@@ -135,8 +195,12 @@ const queryWithSession = <T>(query: T, session?: ClientSession): T => {
   return query
 }
 
-const loadRun = async (manifest: RegistrationAcceptanceManifest, session?: ClientSession) => {
-  const query = acceptanceRunModel.findById(manifest.runId).lean()
+const loadRun = async (
+  models: RegistrationAcceptanceModels,
+  manifest: RegistrationAcceptanceManifest,
+  session?: ClientSession,
+) => {
+  const query = models.RegistrationAcceptanceRun.findById(manifest.runId).lean()
   const run = (await queryWithSession(query, session)) as RunDocument | null
   if (!run) return reject(404, 'ACCEPTANCE_RUN_NOT_FOUND')
   assertRunScope(run, manifest)
@@ -144,14 +208,15 @@ const loadRun = async (manifest: RegistrationAcceptanceManifest, session?: Clien
 }
 
 const consumeTransition = async (
+  models: RegistrationAcceptanceModels,
   manifest: RegistrationAcceptanceManifest,
   nextState: RegistrationAcceptanceState,
   now: Date,
 ) => {
-  const run = await loadRun(manifest)
+  const run = await loadRun(models, manifest)
   assertOperationAvailable(run, manifest)
   if (run.state !== manifest.expectedState) reject(409, 'ACCEPTANCE_PREDECESSOR_MISMATCH')
-  const updated = await acceptanceRunModel.findOneAndUpdate(
+  const updated = await models.RegistrationAcceptanceRun.findOneAndUpdate(
     {
       _id: manifest.runId,
       state: manifest.expectedState,
@@ -170,6 +235,7 @@ const consumeTransition = async (
 }
 
 const transitionResolution = async (
+  models: RegistrationAcceptanceModels,
   manifest: RegistrationAcceptanceManifest,
   nextState: RegistrationAcceptanceState,
   now: Date,
@@ -177,7 +243,7 @@ const transitionResolution = async (
 ) => {
   const update: Record<string, unknown> = { state: nextState }
   if (fixtureUserId) update.fixtureUserId = fixtureUserId
-  const result = await acceptanceRunModel.findOneAndUpdate(
+  const result = await models.RegistrationAcceptanceRun.findOneAndUpdate(
     {
       _id: manifest.runId,
       state: manifest.expectedState,
@@ -196,6 +262,7 @@ const transitionResolution = async (
 }
 
 const inspectSuccessRecords = async (
+  models: RegistrationAcceptanceModels,
   run: RunDocument,
   input: RegistrationRequest,
   session?: ClientSession,
@@ -204,13 +271,15 @@ const inspectSuccessRecords = async (
   const username = canonicalizeUsernameIdentifier(input.account)
   const email = canonicalizeEmailIdentifier(input.email)
   const users = (await queryWithSession(
-    User.find({ $or: [{ account: username.representation }, { email: email.representation }] })
+    models.User.find({
+      $or: [{ account: username.representation }, { email: email.representation }],
+    })
       .select('+password')
       .lean(),
     session,
   )) as unknown as Record<string, unknown>[]
   const claims = (await queryWithSession(
-    IdentifierClaim.find({
+    models.IdentifierClaim.find({
       $or: [
         { kind: 'username', canonicalKey: username.canonicalKey },
         { kind: 'email', canonicalKey: email.canonicalKey },
@@ -280,16 +349,17 @@ export const inspectRegistrationAcceptancePristineState = async (
   run: RunDocument,
   input: RegistrationRequest,
   session?: ClientSession,
+  models: RegistrationAcceptanceModels = defaultModels,
 ): Promise<PristineInspection> => {
-  const base = await inspectSuccessRecords(run, input, session)
+  const base = await inspectSuccessRecords(models, run, input, session)
   if (base.outcome !== 'pristine' || !base.userId) return base
   const userId = new Types.ObjectId(base.userId)
   const ownedCollections = (await queryWithSession(
-    Collection.find({ ownerId: userId }).select('_id').lean(),
+    models.Collection.find({ ownerId: userId }).select('_id').lean(),
     session,
   )) as unknown as { _id: Types.ObjectId }[]
   const conversations = (await queryWithSession(
-    DirectConversation.find({
+    models.DirectConversation.find({
       $or: [
         { participantIds: userId },
         { initiatedByUserId: userId },
@@ -305,31 +375,33 @@ export const inspectRegistrationAcceptancePristineState = async (
   const collectionIds = ownedCollections.map(({ _id }) => _id)
   const conversationIds = conversations.map(({ _id }) => _id)
   const checks = await Promise.all([
-    queryWithSession(RefreshToken.countDocuments({ user: userId }), session),
-    queryWithSession(PasswordResetToken.countDocuments({ user: userId }), session),
-    queryWithSession(Favorite.countDocuments({ userId }), session),
+    queryWithSession(models.RefreshToken.countDocuments({ user: userId }), session),
+    queryWithSession(models.PasswordResetToken.countDocuments({ user: userId }), session),
+    queryWithSession(models.Favorite.countDocuments({ userId }), session),
     Promise.resolve(ownedCollections.length),
     collectionIds.length === 0
       ? Promise.resolve(0)
       : queryWithSession(
-          CollectionMembership.countDocuments({ collectionId: { $in: collectionIds } }),
+          models.CollectionMembership.countDocuments({ collectionId: { $in: collectionIds } }),
           session,
         ),
     queryWithSession(
-      Follow.countDocuments({ $or: [{ followerId: userId }, { followingId: userId }] }),
+      models.Follow.countDocuments({ $or: [{ followerId: userId }, { followingId: userId }] }),
       session,
     ),
     queryWithSession(
-      UserBlock.countDocuments({ $or: [{ blockerUserId: userId }, { blockedUserId: userId }] }),
+      models.UserBlock.countDocuments({
+        $or: [{ blockerUserId: userId }, { blockedUserId: userId }],
+      }),
       session,
     ),
     queryWithSession(
-      Notification.countDocuments({ $or: [{ recipientId: userId }, { actorId: userId }] }),
+      models.Notification.countDocuments({ $or: [{ recipientId: userId }, { actorId: userId }] }),
       session,
     ),
     Promise.resolve(conversations.length),
     queryWithSession(
-      DirectConversationState.countDocuments({
+      models.DirectConversationState.countDocuments({
         $or: [
           { userId },
           ...(conversationIds.length === 0 ? [] : [{ conversationId: { $in: conversationIds } }]),
@@ -337,12 +409,18 @@ export const inspectRegistrationAcceptancePristineState = async (
       }),
       session,
     ),
-    queryWithSession(ContactPairGuard.countDocuments({ participantKey: pairPattern }), session),
-    queryWithSession(DiscussionMembership.countDocuments({ userId }), session),
-    queryWithSession(DiscussionRoom.countDocuments({ 'lastMessage.senderId': userId }), session),
-    queryWithSession(Message.countDocuments({ senderId: userId }), session),
     queryWithSession(
-      Report.countDocuments({
+      models.ContactPairGuard.countDocuments({ participantKey: pairPattern }),
+      session,
+    ),
+    queryWithSession(models.DiscussionMembership.countDocuments({ userId }), session),
+    queryWithSession(
+      models.DiscussionRoom.countDocuments({ 'lastMessage.senderId': userId }),
+      session,
+    ),
+    queryWithSession(models.Message.countDocuments({ senderId: userId }), session),
+    queryWithSession(
+      models.Report.countDocuments({
         $or: [
           { reporterUserId: userId },
           { reportedUserId: userId },
@@ -352,7 +430,7 @@ export const inspectRegistrationAcceptancePristineState = async (
       session,
     ),
     queryWithSession(
-      AccountEnforcementAction.countDocuments({
+      models.AccountEnforcementAction.countDocuments({
         $or: [{ targetUserId: userId }, { performedByUserId: userId }],
       }),
       session,
@@ -381,17 +459,26 @@ export const inspectRegistrationAcceptancePristineState = async (
 }
 
 const inspectConflictResidue = async (
+  models: RegistrationAcceptanceModels,
   run: RunDocument,
   successInput: RegistrationRequest,
   conflictInput: RegistrationRequest,
 ) => {
   assertRequestBinding(conflictInput, run.conflictBinding)
-  const original = await inspectRegistrationAcceptancePristineState(run, successInput)
+  const original = await inspectRegistrationAcceptancePristineState(
+    run,
+    successInput,
+    undefined,
+    models,
+  )
   if (original.outcome !== 'pristine') return { safe: false, violations: original.violations }
   const conflictEmail = canonicalizeEmailIdentifier(conflictInput.email)
   const [users, claims] = await Promise.all([
-    User.countDocuments({ email: conflictEmail.representation }),
-    IdentifierClaim.countDocuments({ kind: 'email', canonicalKey: conflictEmail.canonicalKey }),
+    models.User.countDocuments({ email: conflictEmail.representation }),
+    models.IdentifierClaim.countDocuments({
+      kind: 'email',
+      canonicalKey: conflictEmail.canonicalKey,
+    }),
   ])
   return users === 0 && claims === 0
     ? { safe: true, violations: [] }
@@ -403,13 +490,18 @@ export const createRegistrationAcceptanceService = (
 ) => {
   const registrationWriter = dependencies.registrationWriter ?? registerUser
   const now = dependencies.now ?? (() => new Date())
+  const models = dependencies.models ?? defaultModels
+  const transactionRunner =
+    dependencies.transactionRunner ??
+    ((operation: (session: ClientSession) => Promise<void>) =>
+      mongoose.connection.transaction(operation))
 
   return {
     async prepare(manifest: RegistrationAcceptanceManifest, envelope: RequestEnvelope) {
       assertEnvelope(manifest, envelope)
       if (manifest.expectedState !== 'none') reject(409, 'ACCEPTANCE_PREDECESSOR_MISMATCH')
       try {
-        await acceptanceRunModel.create({
+        await models.RegistrationAcceptanceRun.create({
           _id: manifest.runId,
           version: manifest.version,
           keyId: manifest.keyId,
@@ -433,7 +525,7 @@ export const createRegistrationAcceptanceService = (
     async success(manifest: RegistrationAcceptanceManifest, envelope: RegistrationEnvelope) {
       assertEnvelope(manifest, envelope)
       assertRequestBinding(envelope, manifest.successBinding)
-      await consumeTransition(manifest, 'success_executing', now())
+      await consumeTransition(models, manifest, 'success_executing', now())
       let result: Readonly<{ userId: Types.ObjectId }>
       try {
         result = await registrationWriter({
@@ -445,11 +537,12 @@ export const createRegistrationAcceptanceService = (
         return reject(503, 'ACCEPTANCE_SUCCESS_OUTCOME_UNRESOLVED')
       }
       const inspection = await inspectSuccessRecords(
-        (await acceptanceRunModel.findById(manifest.runId).lean()) as RunDocument,
+        models,
+        (await models.RegistrationAcceptanceRun.findById(manifest.runId).lean()) as RunDocument,
         envelope,
       )
       if (inspection.outcome !== 'pristine' || inspection.userId !== result.userId.toString()) {
-        await acceptanceRunModel.updateOne(
+        await models.RegistrationAcceptanceRun.updateOne(
           { _id: manifest.runId, state: 'success_executing' },
           {
             $set: { state: 'stopped' },
@@ -458,7 +551,7 @@ export const createRegistrationAcceptanceService = (
         )
         return reject(503, 'ACCEPTANCE_SUCCESS_POSTCONDITION_FAILED')
       }
-      const completed = await acceptanceRunModel.findOneAndUpdate(
+      const completed = await models.RegistrationAcceptanceRun.findOneAndUpdate(
         { _id: manifest.runId, state: 'success_executing' },
         {
           $set: { state: 'success_completed', fixtureUserId: result.userId },
@@ -477,7 +570,7 @@ export const createRegistrationAcceptanceService = (
       assertEnvelope(manifest, envelope)
       assertRequestBinding(envelope, manifest.conflictBinding)
       assertRequestBinding(envelope.success, manifest.successBinding)
-      await consumeTransition(manifest, 'conflict_executing', now())
+      await consumeTransition(models, manifest, 'conflict_executing', now())
       try {
         await registrationWriter({
           account: envelope.account,
@@ -490,12 +583,13 @@ export const createRegistrationAcceptanceService = (
           error.code === 'REGISTRATION_ACCOUNT_CONFLICT'
         ) {
           const residue = await inspectConflictResidue(
-            (await acceptanceRunModel.findById(manifest.runId).lean()) as RunDocument,
+            models,
+            (await models.RegistrationAcceptanceRun.findById(manifest.runId).lean()) as RunDocument,
             envelope.success,
             envelope,
           )
           if (!residue.safe) {
-            await acceptanceRunModel.updateOne(
+            await models.RegistrationAcceptanceRun.updateOne(
               { _id: manifest.runId, state: 'conflict_executing' },
               {
                 $set: { state: 'stopped' },
@@ -504,7 +598,7 @@ export const createRegistrationAcceptanceService = (
             )
             return reject(503, 'ACCEPTANCE_CONFLICT_POSTCONDITION_FAILED')
           }
-          const verified = await acceptanceRunModel.findOneAndUpdate(
+          const verified = await models.RegistrationAcceptanceRun.findOneAndUpdate(
             { _id: manifest.runId, state: 'conflict_executing' },
             {
               $set: { state: 'conflict_verified' },
@@ -517,7 +611,7 @@ export const createRegistrationAcceptanceService = (
         }
         return reject(503, 'ACCEPTANCE_CONFLICT_OUTCOME_UNRESOLVED')
       }
-      await acceptanceRunModel.updateOne(
+      await models.RegistrationAcceptanceRun.updateOne(
         { _id: manifest.runId, state: 'conflict_executing' },
         { $set: { state: 'stopped' }, $push: { auditEvents: event(manifest, 'stopped', now()) } },
       )
@@ -532,11 +626,11 @@ export const createRegistrationAcceptanceService = (
       },
     ) {
       assertEnvelope(manifest, envelope)
-      const run = await loadRun(manifest)
+      const run = await loadRun(models, manifest)
       assertOperationAvailable(run, manifest)
       if (run.state !== manifest.expectedState) reject(409, 'ACCEPTANCE_PREDECESSOR_MISMATCH')
       if (manifest.resolution === 'stop') {
-        await transitionResolution(manifest, 'stopped', now())
+        await transitionResolution(models, manifest, 'stopped', now())
         return { state: 'stopped' as const }
       }
       if (
@@ -544,16 +638,16 @@ export const createRegistrationAcceptanceService = (
         manifest.resolution === 'success_no_effect'
       ) {
         if (run.state !== 'success_executing') reject(409, 'ACCEPTANCE_RESOLUTION_INVALID')
-        const inspection = await inspectSuccessRecords(run, envelope.success)
+        const inspection = await inspectSuccessRecords(models, run, envelope.success)
         const expected = manifest.resolution === 'success_committed' ? 'pristine' : 'zero'
         if (inspection.outcome !== expected) {
-          await transitionResolution(manifest, 'stopped', now())
+          await transitionResolution(models, manifest, 'stopped', now())
           return reject(409, 'ACCEPTANCE_RESOLUTION_EVIDENCE_MISMATCH')
         }
         const fixtureUserId = inspection.userId ? new Types.ObjectId(inspection.userId) : undefined
         const state =
           manifest.resolution === 'success_committed' ? 'success_completed' : 'success_no_effect'
-        await transitionResolution(manifest, state, now(), fixtureUserId)
+        await transitionResolution(models, manifest, state, now(), fixtureUserId)
         return { state }
       }
       if (manifest.resolution === 'conflict_no_effect') {
@@ -561,12 +655,12 @@ export const createRegistrationAcceptanceService = (
         if (run.state !== 'conflict_executing' || !conflictInput) {
           return reject(409, 'ACCEPTANCE_RESOLUTION_INVALID')
         }
-        const residue = await inspectConflictResidue(run, envelope.success, conflictInput)
+        const residue = await inspectConflictResidue(models, run, envelope.success, conflictInput)
         if (!residue.safe) {
-          await transitionResolution(manifest, 'stopped', now())
+          await transitionResolution(models, manifest, 'stopped', now())
           return reject(409, 'ACCEPTANCE_RESOLUTION_EVIDENCE_MISMATCH')
         }
-        await transitionResolution(manifest, 'conflict_no_effect', now())
+        await transitionResolution(models, manifest, 'conflict_no_effect', now())
         return { state: 'conflict_no_effect' as const }
       }
       return reject(409, 'ACCEPTANCE_RESOLUTION_INVALID')
@@ -579,13 +673,13 @@ export const createRegistrationAcceptanceService = (
       if (targetOperationId === manifest.operationId) {
         return reject(400, 'ACCEPTANCE_REVOCATION_INVALID')
       }
-      const run = await loadRun(manifest)
+      const run = await loadRun(models, manifest)
       assertOperationAvailable(run, manifest)
       if (run.state !== manifest.expectedState) reject(409, 'ACCEPTANCE_PREDECESSOR_MISMATCH')
       if (run.consumedOperationIds.includes(targetOperationId)) {
         reject(409, 'ACCEPTANCE_REVOCATION_TARGET_CONSUMED')
       }
-      const updated = await acceptanceRunModel.findOneAndUpdate(
+      const updated = await models.RegistrationAcceptanceRun.findOneAndUpdate(
         {
           _id: manifest.runId,
           state: manifest.expectedState,
@@ -612,8 +706,8 @@ export const createRegistrationAcceptanceService = (
       assertEnvelope(manifest, envelope)
       assertRequestBinding(envelope.success, manifest.successBinding)
       try {
-        await mongoose.connection.transaction(async (session) => {
-          const run = await loadRun(manifest, session)
+        await transactionRunner(async (session) => {
+          const run = await loadRun(models, manifest, session)
           assertOperationAvailable(run, manifest)
           if (run.state !== 'conflict_verified' || manifest.expectedState !== 'conflict_verified') {
             reject(409, 'ACCEPTANCE_PREDECESSOR_MISMATCH')
@@ -624,19 +718,20 @@ export const createRegistrationAcceptanceService = (
             run,
             envelope.success,
             session,
+            models,
           )
           if (inspection.outcome !== 'pristine' || inspection.userId !== fixtureUserId.toString()) {
             reject(409, 'ACCEPTANCE_FIXTURE_NOT_PRISTINE')
           }
-          const emailDelete = await IdentifierClaim.deleteOne(
+          const emailDelete = await models.IdentifierClaim.deleteOne(
             { kind: 'email', ownerUserId: fixtureUserId, state: 'active' },
             { session },
           )
-          const usernameDelete = await IdentifierClaim.deleteOne(
+          const usernameDelete = await models.IdentifierClaim.deleteOne(
             { kind: 'username', ownerUserId: fixtureUserId, state: 'active' },
             { session },
           )
-          const userDelete = await User.deleteOne({ _id: fixtureUserId }, { session })
+          const userDelete = await models.User.deleteOne({ _id: fixtureUserId }, { session })
           if (
             emailDelete.deletedCount !== 1 ||
             usernameDelete.deletedCount !== 1 ||
@@ -644,7 +739,7 @@ export const createRegistrationAcceptanceService = (
           ) {
             reject(409, 'ACCEPTANCE_CLEANUP_DELETE_COUNT_INVALID')
           }
-          const updated = await acceptanceRunModel.updateOne(
+          const updated = await models.RegistrationAcceptanceRun.updateOne(
             {
               _id: manifest.runId,
               state: 'conflict_verified',
@@ -668,9 +763,16 @@ export const createRegistrationAcceptanceService = (
     },
 
     async verify(runId: string, successInput: RegistrationRequest) {
-      const run = (await acceptanceRunModel.findById(runId).lean()) as RunDocument | null
+      const run = (await models.RegistrationAcceptanceRun.findById(
+        runId,
+      ).lean()) as RunDocument | null
       if (!run) return reject(404, 'ACCEPTANCE_RUN_NOT_FOUND')
-      const inspection = await inspectRegistrationAcceptancePristineState(run, successInput)
+      const inspection = await inspectRegistrationAcceptancePristineState(
+        run,
+        successInput,
+        undefined,
+        models,
+      )
       return { state: run.state, inspection }
     },
   }
