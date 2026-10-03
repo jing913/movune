@@ -65,8 +65,8 @@ describe('Registration migration gate', () => {
     if (server) await new Promise((resolve) => server.close(resolve))
   })
 
-  it('checks in the Stage 4 Gate-ON release state', () => {
-    assert.equal(REGISTRATION_RELEASE_STATE, 'stage4-gate-on')
+  it('checks in the Stage 4 Gate-OFF release state', () => {
+    assert.equal(REGISTRATION_RELEASE_STATE, 'stage4-gate-off')
   })
 
   it('blocks legacy and Stage 4 Gate-ON without calling next', () => {
@@ -104,15 +104,32 @@ describe('Registration migration gate', () => {
     )
   })
 
-  it('returns the exact Gate-ON contract before registration validation', async () => {
-    for (const body of [
-      { account: 'gateProbe', email: 'gate-probe@test.invalid', password: 'password123' },
-      {},
-    ]) {
-      const response = await postJson(baseUrl, '/api/auth/register', body)
-      assert.equal(response.status, 503)
-      assert.equal(response.headers.get('retry-after'), null)
-      assert.deepEqual(await response.json(), lockedResponse)
+  it('allows the production Gate-OFF route to reach registration validation', async () => {
+    const response = await postJson(baseUrl, '/api/auth/register', {})
+    assert.equal(response.status, 400)
+    assert.notEqual((await response.json()).error?.code, lockedResponse.error.code)
+  })
+
+  it('retains the exact Gate-ON contract before registration validation', async () => {
+    const app = express()
+    app.use(express.json())
+    app.post('/register', createRegistrationMigrationGate('stage4-gate-on'), register)
+    app.use(errorHandler)
+    const gateOnServer = app.listen(0, '127.0.0.1')
+    await new Promise((resolve) => gateOnServer.once('listening', resolve))
+    try {
+      const address = gateOnServer.address()
+      for (const body of [
+        { account: 'gateProbe', email: 'gate-probe@test.invalid', password: 'password123' },
+        {},
+      ]) {
+        const response = await postJson(`http://127.0.0.1:${address.port}`, '/register', body)
+        assert.equal(response.status, 503)
+        assert.equal(response.headers.get('retry-after'), null)
+        assert.deepEqual(await response.json(), lockedResponse)
+      }
+    } finally {
+      await new Promise((resolve) => gateOnServer.close(resolve))
     }
   })
 

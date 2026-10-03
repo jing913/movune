@@ -47,6 +47,8 @@ describe('Registration migration gate dedicated-database acceptance', { timeout:
   const canonicalKeys = new Set()
   let gateOnServer
   let gateOnBaseUrl
+  let productionServer
+  let productionBaseUrl
 
   const rememberIdentity = (account, email) => {
     const username = canonicalizeUsernameIdentifier(account)
@@ -79,6 +81,9 @@ describe('Registration migration gate dedicated-database acceptance', { timeout:
     })
 
     ;({ server: gateOnServer, baseUrl: gateOnBaseUrl } = await startApp((app) => {
+      app.post('/api/auth/register', createRegistrationMigrationGate('stage4-gate-on'), register)
+    }))
+    ;({ server: productionServer, baseUrl: productionBaseUrl } = await startApp((app) => {
       app.use('/api/auth', authRouter)
     }))
   })
@@ -86,6 +91,7 @@ describe('Registration migration gate dedicated-database acceptance', { timeout:
   after(async () => {
     try {
       if (gateOnServer) await closeServer(gateOnServer)
+      if (productionServer) await closeServer(productionServer)
       if (harness.ready) await harness.runCleanup()
     } finally {
       await harness.close()
@@ -132,66 +138,59 @@ describe('Registration migration gate dedicated-database acceptance', { timeout:
     assert.deepEqual(await cohortCounts(), beforeCounts)
   })
 
-  it('allows the Stage 4 writer only in an explicit test-only Gate-OFF app', async () => {
+  it('allows the Stage 4 writer through the production Gate-OFF router', async () => {
     const suffix = harness.runId.replaceAll('-', '').slice(0, 8)
     const passThrough = rememberIdentity(`i4apass${suffix}`, `  I4A-Pass-${suffix}@test.invalid  `)
-    const { server, baseUrl } = await startApp((app) => {
-      app.post('/api/auth/register', createRegistrationMigrationGate('stage4-gate-off'), register)
+    const response = await postRegistration(productionBaseUrl, passThrough)
+    assert.equal(response.status, 201)
+    assert.deepEqual(await response.json(), { message: 'Register successful' })
+    const user = await User.findOne({ account: passThrough.account }).lean()
+    assert.ok(user)
+    assert.equal(user.email, canonicalizeEmailIdentifier(passThrough.email).representation)
+    const claims = await IdentifierClaim.find({ ownerUserId: user._id }).sort({ kind: 1 }).lean()
+    assert.deepEqual(
+      claims.map(({ kind, canonicalKey, ownerUserId, state }) => ({
+        kind,
+        canonicalKey,
+        ownerUserId: ownerUserId.toString(),
+        state,
+      })),
+      [
+        {
+          kind: 'email',
+          canonicalKey: canonicalizeEmailIdentifier(passThrough.email).canonicalKey,
+          ownerUserId: user._id.toString(),
+          state: 'active',
+        },
+        {
+          kind: 'username',
+          canonicalKey: canonicalizeUsernameIdentifier(passThrough.account).canonicalKey,
+          ownerUserId: user._id.toString(),
+          state: 'active',
+        },
+      ],
+    )
+
+    const emailConflict = rememberIdentity(
+      `i4aemail${suffix}`,
+      canonicalizeEmailIdentifier(passThrough.email).representation.toUpperCase(),
+    )
+    const emailResponse = await postRegistration(productionBaseUrl, emailConflict)
+    assert.equal(emailResponse.status, 409)
+    assert.deepEqual(await emailResponse.json(), {
+      message: 'Email already exists',
+      code: 'REGISTRATION_EMAIL_CONFLICT',
     })
-    try {
-      const response = await postRegistration(baseUrl, passThrough)
-      assert.equal(response.status, 201)
-      assert.deepEqual(await response.json(), { message: 'Register successful' })
-      const user = await User.findOne({ account: passThrough.account }).lean()
-      assert.ok(user)
-      assert.equal(user.email, canonicalizeEmailIdentifier(passThrough.email).representation)
-      const claims = await IdentifierClaim.find({ ownerUserId: user._id }).sort({ kind: 1 }).lean()
-      assert.deepEqual(
-        claims.map(({ kind, canonicalKey, ownerUserId, state }) => ({
-          kind,
-          canonicalKey,
-          ownerUserId: ownerUserId.toString(),
-          state,
-        })),
-        [
-          {
-            kind: 'email',
-            canonicalKey: canonicalizeEmailIdentifier(passThrough.email).canonicalKey,
-            ownerUserId: user._id.toString(),
-            state: 'active',
-          },
-          {
-            kind: 'username',
-            canonicalKey: canonicalizeUsernameIdentifier(passThrough.account).canonicalKey,
-            ownerUserId: user._id.toString(),
-            state: 'active',
-          },
-        ],
-      )
 
-      const emailConflict = rememberIdentity(
-        `i4aemail${suffix}`,
-        canonicalizeEmailIdentifier(passThrough.email).representation.toUpperCase(),
-      )
-      const emailResponse = await postRegistration(baseUrl, emailConflict)
-      assert.equal(emailResponse.status, 409)
-      assert.deepEqual(await emailResponse.json(), {
-        message: 'Email already exists',
-        code: 'REGISTRATION_EMAIL_CONFLICT',
-      })
-
-      const accountConflict = rememberIdentity(
-        passThrough.account.toUpperCase(),
-        `i4a-account-${suffix}@test.invalid`,
-      )
-      const accountResponse = await postRegistration(baseUrl, accountConflict)
-      assert.equal(accountResponse.status, 409)
-      assert.deepEqual(await accountResponse.json(), {
-        message: 'Account already exists',
-        code: 'REGISTRATION_ACCOUNT_CONFLICT',
-      })
-    } finally {
-      await closeServer(server)
-    }
+    const accountConflict = rememberIdentity(
+      passThrough.account.toUpperCase(),
+      `i4a-account-${suffix}@test.invalid`,
+    )
+    const accountResponse = await postRegistration(productionBaseUrl, accountConflict)
+    assert.equal(accountResponse.status, 409)
+    assert.deepEqual(await accountResponse.json(), {
+      message: 'Account already exists',
+      code: 'REGISTRATION_ACCOUNT_CONFLICT',
+    })
   })
 })

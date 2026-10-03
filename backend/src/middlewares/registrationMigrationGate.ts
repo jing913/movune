@@ -3,7 +3,7 @@ import { StatusCodes } from 'http-status-codes'
 
 export type RegistrationReleaseState = 'legacy-gate-on' | 'stage4-gate-on' | 'stage4-gate-off'
 
-export const REGISTRATION_RELEASE_STATE: RegistrationReleaseState = 'stage4-gate-on'
+export const REGISTRATION_RELEASE_STATE: RegistrationReleaseState = 'stage4-gate-off'
 
 export const REGISTRATION_MIGRATION_GATE_STATUS = StatusCodes.SERVICE_UNAVAILABLE
 export const REGISTRATION_MIGRATION_GATE_RESPONSE = Object.freeze({
