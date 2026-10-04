@@ -2,7 +2,7 @@ import api from '@/services/api'
 import type { PublicCollectionSummary } from '@/services/collections'
 import type { Favorite } from '@/services/favorites'
 
-export interface User {
+export interface PublicUser {
   _id: string
   account: string
   displayName: string
@@ -10,7 +10,13 @@ export interface User {
   bio?: string
 }
 
-export interface PeopleIdentity extends User {
+export interface User extends PublicUser {
+  capabilities: {
+    manageAnnouncements: boolean
+  }
+}
+
+export interface PeopleIdentity extends PublicUser {
   isFollowing: boolean
   followerCount: number
   followingCount: number
@@ -48,7 +54,7 @@ export interface SharedDnaGenre {
   sharedGenreStrength: number
 }
 
-export interface EncounterCandidate extends User {
+export interface EncounterCandidate extends PublicUser {
   isFollowing: boolean
   followerCount: number
   followingCount: number
@@ -86,7 +92,7 @@ export interface FormalRecommendationsResponse {
 }
 
 export interface MovieSpaceResponse {
-  user: User
+  user: PublicUser
   favorites?: Favorite[]
   collections: PublicCollectionSummary[]
 }

@@ -25,6 +25,7 @@ import {
   readMessagingPrivacy,
   updateMessagingPrivacy,
 } from '../services/messagingPrivacyService.js'
+import { deriveAnnouncementCapabilities } from '../policies/announcementAuthorizationPolicy.js'
 import {
   assertMemberSocialPairAccess,
   loadEffectiveBlockedUserIds,
@@ -69,13 +70,14 @@ type EncounterBody = {
   cooldownIds?: unknown
 }
 
-const serializeUser = (user: Express.User) => ({
+export const serializeUser = (user: Express.User) => ({
   _id: user._id,
   account: user.account,
   displayName: user.displayName?.trim() || user.account,
   avatar: user.avatar,
   bio: user.bio,
   favoritesPublic: getFavoritesVisibility(user) === 'public',
+  capabilities: deriveAnnouncementCapabilities(user),
 })
 
 const serializePublicUser = (user: Express.User) => ({
