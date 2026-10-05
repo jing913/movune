@@ -12,11 +12,14 @@ import InboxView from '@/views/InboxView.vue'
 import CollectionDetailView from '@/views/CollectionDetailView.vue'
 import AnnouncementCenterView from '@/views/AnnouncementCenterView.vue'
 import AnnouncementDetailView from '@/views/AnnouncementDetailView.vue'
+import AnnouncementAdminListView from '@/views/admin/AnnouncementAdminListView.vue'
+import AnnouncementAdminEditorView from '@/views/admin/AnnouncementAdminEditorView.vue'
 import { useUserStore } from '@/stores/user'
 
 declare module 'vue-router' {
   interface RouteMeta {
     requiresAuth?: boolean
+    requiresAnnouncementManagement?: boolean
   }
 }
 
@@ -101,6 +104,24 @@ const routes = [
     name: 'announcement-detail',
     component: AnnouncementDetailView,
   },
+  {
+    path: '/admin/announcements',
+    name: 'announcement-admin-list',
+    component: AnnouncementAdminListView,
+    meta: { requiresAuth: true, requiresAnnouncementManagement: true },
+  },
+  {
+    path: '/admin/announcements/new',
+    name: 'announcement-admin-new',
+    component: AnnouncementAdminEditorView,
+    meta: { requiresAuth: true, requiresAnnouncementManagement: true },
+  },
+  {
+    path: '/admin/announcements/:announcementId',
+    name: 'announcement-admin-editor',
+    component: AnnouncementAdminEditorView,
+    meta: { requiresAuth: true, requiresAnnouncementManagement: true },
+  },
 ]
 
 const router = createRouter({
@@ -131,6 +152,13 @@ router.beforeEach(async (to) => {
         redirect: to.fullPath,
       },
     }
+  }
+
+  if (
+    to.meta.requiresAnnouncementManagement &&
+    userStore.currentUser?.capabilities.manageAnnouncements !== true
+  ) {
+    return { path: '/' }
   }
 })
 
