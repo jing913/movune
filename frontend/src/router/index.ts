@@ -10,6 +10,8 @@ import PublicMovieSpaceView from '@/views/PublicMovieSpaceView.vue'
 import EncounterView from '@/views/EncounterView.vue'
 import InboxView from '@/views/InboxView.vue'
 import CollectionDetailView from '@/views/CollectionDetailView.vue'
+import AnnouncementCenterView from '@/views/AnnouncementCenterView.vue'
+import AnnouncementDetailView from '@/views/AnnouncementDetailView.vue'
 import { useUserStore } from '@/stores/user'
 
 declare module 'vue-router' {
@@ -88,6 +90,16 @@ const routes = [
     path: '/reset-password',
     name: 'reset-password',
     component: ResetPasswordView,
+  },
+  {
+    path: '/announcements',
+    name: 'announcement-center',
+    component: AnnouncementCenterView,
+  },
+  {
+    path: '/announcements/:announcementId',
+    name: 'announcement-detail',
+    component: AnnouncementDetailView,
   },
 ]
 

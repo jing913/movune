@@ -62,6 +62,7 @@ let searchRequestVersion = 0
 type MobileNavigationDestination =
   | '/'
   | '/explore'
+  | '/announcements'
   | '/people'
   | '/encounter'
   | '/inbox'
@@ -80,6 +81,10 @@ const mobileNavigationCurrentClass = '!bg-surface-raised !font-semibold !text-fo
 const trimmedSearchQuery = computed(() => navbarSearchQuery.value.trim())
 
 function isMobileDestinationCurrent(destination: MobileNavigationDestination) {
+  if (destination === '/announcements') {
+    return route.path === '/announcements' || route.path.startsWith('/announcements/')
+  }
+
   if (destination === '/movie-space') {
     return route.path === '/movie-space' && (!route.query.view || route.query.view === 'profile')
   }
@@ -534,7 +539,7 @@ watch(isMenuOpen, (isOpen) => {
           </span>
         </RouterLink>
 
-        <div class="hidden min-w-0 items-center justify-between gap-10 lg:flex xl:gap-14">
+        <div class="hidden min-w-0 items-center justify-between gap-6 lg:flex xl:gap-10">
           <nav class="shrink-0" aria-label="主要導覽">
             <ul class="flex items-center gap-6">
               <li>
@@ -604,6 +609,15 @@ watch(isMenuOpen, (isOpen) => {
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+              </li>
+              <li>
+                <RouterLink
+                  to="/announcements"
+                  class="block whitespace-nowrap border-b-2 border-transparent px-1 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  active-class="!border-accent-caramel !text-foreground"
+                >
+                  公告中心
+                </RouterLink>
               </li>
             </ul>
           </nav>
@@ -1090,6 +1104,22 @@ watch(isMenuOpen, (isOpen) => {
                 </RouterLink>
               </li>
             </ul>
+          </li>
+          <li>
+            <RouterLink v-slot="{ href, navigate }" to="/announcements" custom>
+              <a
+                :href="href"
+                :aria-current="isMobileDestinationCurrent('/announcements') ? 'page' : undefined"
+                :class="[
+                  mobileNavigationLinkClass,
+                  'px-3',
+                  isMobileDestinationCurrent('/announcements') ? mobileNavigationCurrentClass : '',
+                ]"
+                @click="handleMobileNavigation($event, navigate)"
+              >
+                公告中心
+              </a>
+            </RouterLink>
           </li>
         </ul>
       </nav>
