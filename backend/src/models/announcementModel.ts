@@ -8,6 +8,7 @@ import {
   type AnnouncementCategory,
   type AnnouncementGovernanceStatus,
   type AnnouncementMaintenanceData,
+  type AnnouncementMaintenanceStatus,
   type AnnouncementPriority,
   type AnnouncementPublicationStatus,
 } from '../policies/announcementLifecyclePolicy.js'
@@ -21,16 +22,25 @@ export type AnnouncementImportantUpdate = Readonly<{
   note: string
 }>
 
+export type AnnouncementDraftMaintenanceData = Readonly<{
+  status?: AnnouncementMaintenanceStatus
+  startsAt?: Date
+  endsAt?: Date
+  affectedAreas?: readonly string[]
+  expectedImpact?: string
+  actualCompletionTime?: Date
+}>
+
 export interface IAnnouncement {
   category: AnnouncementCategory
   priority: AnnouncementPriority
-  title: string
-  body: AnnouncementRichTextDocument
+  title?: string
+  body?: AnnouncementRichTextDocument
   publicationStatus: AnnouncementPublicationStatus
   governanceStatus: AnnouncementGovernanceStatus
   publishedAt?: Date
   importantUpdate?: AnnouncementImportantUpdate
-  maintenance?: AnnouncementMaintenanceData
+  maintenance?: AnnouncementDraftMaintenanceData | AnnouncementMaintenanceData
   revision: number
   createdAt: Date
   updatedAt: Date
@@ -49,18 +59,17 @@ const importantUpdateSchema = new Schema<AnnouncementImportantUpdate>(
   { _id: false },
 )
 
-const maintenanceSchema = new Schema<AnnouncementMaintenanceData>(
+const maintenanceSchema = new Schema<AnnouncementDraftMaintenanceData>(
   {
-    status: { type: String, enum: ANNOUNCEMENT_MAINTENANCE_STATUSES, required: true },
-    startsAt: { type: Date, required: true },
+    status: { type: String, enum: ANNOUNCEMENT_MAINTENANCE_STATUSES },
+    startsAt: { type: Date },
     endsAt: {
       type: Date,
-      required: true,
       validate: {
-        validator: function (this: unknown, value: Date) {
+        validator: function (this: unknown, value: Date | undefined) {
           const context = this as { startsAt?: unknown }
           return (
-            value instanceof Date && context.startsAt instanceof Date && context.startsAt < value
+            value === undefined || !(context.startsAt instanceof Date) || context.startsAt < value
           )
         },
         message: 'endsAt must follow startsAt',
@@ -68,22 +77,20 @@ const maintenanceSchema = new Schema<AnnouncementMaintenanceData>(
     },
     affectedAreas: {
       type: [String],
-      required: true,
+      default: undefined,
       validate: {
-        validator: (value: string[]) =>
-          value.length > 0 && value.every((area) => area.length > 0 && area === area.trim()),
+        validator: (value: string[] | undefined) =>
+          value === undefined ||
+          (value.length > 0 && value.every((area) => area.length > 0 && area === area.trim())),
         message: 'affectedAreas must contain user-understandable product areas',
       },
     },
-    expectedImpact: { type: String, required: true, validate: nonemptyTrimmedText },
+    expectedImpact: { type: String, validate: nonemptyTrimmedText },
     actualCompletionTime: {
       type: Date,
-      required: function (this: unknown) {
-        return (this as { status?: unknown }).status === 'completed'
-      },
       validate: {
         validator: function (this: unknown, value: Date | undefined) {
-          return (this as { status?: unknown }).status === 'completed' || value === undefined
+          return value === undefined || (this as { status?: unknown }).status === 'completed'
         },
         message: 'actualCompletionTime is only supported for completed maintenance',
       },
@@ -96,10 +103,9 @@ const announcementSchema = new Schema<IAnnouncement>(
   {
     category: { type: String, enum: ANNOUNCEMENT_CATEGORIES, required: true },
     priority: { type: String, enum: ANNOUNCEMENT_PRIORITIES, required: true },
-    title: { type: String, required: true, validate: nonemptyTrimmedText },
+    title: { type: String, validate: nonemptyTrimmedText },
     body: {
       type: Schema.Types.Mixed,
-      required: true,
       validate: {
         validator: isAnnouncementRichText,
         message: 'body must satisfy the Movune Announcement Rich Text contract',
@@ -119,11 +125,11 @@ const announcementSchema = new Schema<IAnnouncement>(
     importantUpdate: { type: importantUpdateSchema },
     maintenance: {
       type: maintenanceSchema,
-      required: function (this: IAnnouncement) {
-        return this.category === 'system_maintenance'
-      },
       validate: {
-        validator: function (this: IAnnouncement, value: AnnouncementMaintenanceData | undefined) {
+        validator: function (
+          this: IAnnouncement,
+          value: AnnouncementDraftMaintenanceData | AnnouncementMaintenanceData | undefined,
+        ) {
           return this.category === 'system_maintenance' || value === undefined
         },
         message: 'maintenance is only supported for system_maintenance Announcements',

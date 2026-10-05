@@ -54,9 +54,15 @@ describe('P10-I1 Announcement persistence contract', () => {
     )
   })
 
-  it('requires maintenance only for system_maintenance Announcements', async () => {
-    await assert.rejects(() =>
+  it('allows absent or partial maintenance only for system_maintenance Drafts', async () => {
+    await assert.doesNotReject(() =>
       announcement({ category: 'system_maintenance', maintenance: undefined }).validate(),
+    )
+    await assert.doesNotReject(() =>
+      announcement({
+        category: 'system_maintenance',
+        maintenance: { status: 'scheduled', startsAt: new Date('2035-01-01T00:00:00.000Z') },
+      }).validate(),
     )
     await assert.rejects(() => announcement({ maintenance: maintenance() }).validate())
     await assert.rejects(() =>
@@ -64,8 +70,8 @@ describe('P10-I1 Announcement persistence contract', () => {
     )
   })
 
-  it('requires actualCompletionTime exactly for Completed maintenance', async () => {
-    await assert.rejects(() =>
+  it('allows incomplete Completed maintenance but rejects contradictory completion times', async () => {
+    await assert.doesNotReject(() =>
       announcement({
         category: 'system_maintenance',
         maintenance: maintenance('completed', { actualCompletionTime: undefined }),
@@ -101,6 +107,29 @@ describe('P10-I1 Announcement persistence contract', () => {
     await assert.rejects(() =>
       announcement({ body: { type: 'document', content: [{ type: 'image' }] } }).validate(),
     )
+  })
+
+  it('allows an incomplete Draft without title or body', async () => {
+    await assert.doesNotReject(() => announcement({ title: undefined }).validate())
+    await assert.doesNotReject(() => announcement({ body: undefined }).validate())
+    await assert.doesNotReject(() => announcement({ title: undefined, body: undefined }).validate())
+  })
+
+  it('rejects malformed present partial maintenance values', async () => {
+    for (const maintenanceValue of [
+      { status: 'invalid' },
+      { startsAt: new Date('invalid') },
+      { affectedAreas: [''] },
+      { expectedImpact: ' untrimmed ' },
+      { status: 'scheduled', actualCompletionTime: new Date('2035-01-01T01:00:00.000Z') },
+    ]) {
+      await assert.rejects(() =>
+        announcement({
+          category: 'system_maintenance',
+          maintenance: maintenanceValue,
+        }).validate(),
+      )
+    }
   })
 
   it('contains only the locked Announcement root fields', () => {
