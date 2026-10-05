@@ -9,6 +9,18 @@ import type { AnnouncementGovernanceChanges } from '../models/announcementGovern
 import { ApiProblem } from './messagingPolicy.js'
 
 export type AnnouncementRevisionRequest = Readonly<{ expectedRevision: number }>
+export const ANNOUNCEMENT_REMOVAL_REASON_CODES = [
+  'privacy',
+  'legal',
+  'safety',
+  'mistaken_publication',
+  'other',
+] as const
+export type AnnouncementRemovalRequest = Readonly<{
+  expectedRevision: number
+  reasonCode: (typeof ANNOUNCEMENT_REMOVAL_REASON_CODES)[number]
+  reasonSummary: string
+}>
 export type AnnouncementPublishedEditRequest = Readonly<{
   expectedRevision: number
   editIntent: 'general_correction' | 'important_update'
@@ -90,6 +102,30 @@ export const parseAnnouncementRevisionRequest = (value: unknown): AnnouncementRe
     throw announcementGovernanceRequestInvalid()
   }
   return { expectedRevision: parseRevision(value.expectedRevision) }
+}
+
+export const parseAnnouncementRemovalRequest = (value: unknown): AnnouncementRemovalRequest => {
+  if (
+    !isRecord(value) ||
+    !exactKeys(
+      value,
+      ['expectedRevision', 'reasonCode', 'reasonSummary'],
+      ['expectedRevision', 'reasonCode', 'reasonSummary'],
+    ) ||
+    typeof value.reasonCode !== 'string' ||
+    !(ANNOUNCEMENT_REMOVAL_REASON_CODES as readonly string[]).includes(value.reasonCode) ||
+    typeof value.reasonSummary !== 'string' ||
+    value.reasonSummary.length === 0 ||
+    value.reasonSummary.length > 500 ||
+    value.reasonSummary !== value.reasonSummary.trim()
+  ) {
+    throw announcementGovernanceRequestInvalid()
+  }
+  return {
+    expectedRevision: parseRevision(value.expectedRevision),
+    reasonCode: value.reasonCode as AnnouncementRemovalRequest['reasonCode'],
+    reasonSummary: value.reasonSummary,
+  }
 }
 
 export const parseAnnouncementPublishedEditRequest = (

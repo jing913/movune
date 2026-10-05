@@ -34,7 +34,7 @@ afterEach(() => {
   mongoose.Collection.prototype.insertOne = originalInsertOne
 })
 
-describe('P10-I5 Announcement governance event model', () => {
+describe('P10-I6 Announcement governance event model', () => {
   it('exports only the append boundary and safe runtime constants', () => {
     assert.deepEqual(Object.keys(governanceEventModule).sort(), [
       'ANNOUNCEMENT_GOVERNANCE_ACTIONS',
@@ -73,6 +73,9 @@ describe('P10-I5 Announcement governance event model', () => {
               maintenanceStatus: { from: 'scheduled', to: 'completed' },
             },
             ...(action === 'important_update' ? { updateNote: 'Important context' } : {}),
+            ...(action === 'exceptional_removal'
+              ? { reasonCode: 'privacy', reasonSummary: 'Required privacy removal' }
+              : {}),
           }),
           session,
         ),
@@ -122,6 +125,50 @@ describe('P10-I5 Announcement governance event model', () => {
     assert.equal(retained.includes('after'), false)
   })
 
+  it('requires locked reason metadata only for exceptional removal and stores no snapshots', async () => {
+    const inserts = captureInserts()
+    for (const reasonCode of ['privacy', 'legal', 'safety', 'mistaken_publication', 'other']) {
+      await assert.doesNotReject(() =>
+        appendAnnouncementGovernanceEvent(
+          event({
+            action: 'exceptional_removal',
+            reasonCode,
+            reasonSummary: 'Governance reason',
+            title: 'must be discarded',
+            body: { private: 'must be discarded' },
+            maintenance: { expectedImpact: 'must be discarded' },
+            importantUpdate: { note: 'must be discarded' },
+          }),
+          session,
+        ),
+      )
+    }
+    for (const invalid of [
+      event({ action: 'exceptional_removal', reasonSummary: 'Missing code' }),
+      event({ action: 'exceptional_removal', reasonCode: 'privacy' }),
+      event({
+        action: 'exceptional_removal',
+        reasonCode: 'unsupported',
+        reasonSummary: 'Bad code',
+      }),
+      event({ action: 'exceptional_removal', reasonCode: 'legal', reasonSummary: '' }),
+      event({ action: 'exceptional_removal', reasonCode: 'legal', reasonSummary: ' untrimmed ' }),
+      event({ action: 'exceptional_removal', reasonCode: 'legal', reasonSummary: 'x'.repeat(501) }),
+      event({ action: 'publish', reasonCode: 'privacy' }),
+      event({ action: 'publish', reasonSummary: 'Not allowed' }),
+    ]) {
+      await assert.rejects(() => appendAnnouncementGovernanceEvent(invalid, session))
+    }
+    assert.equal(inserts.length, 5)
+    for (const { document } of inserts) {
+      assert.equal(document.action, 'exceptional_removal')
+      assert.equal('title' in document, false)
+      assert.equal('body' in document, false)
+      assert.equal('maintenance' in document, false)
+      assert.equal('importantUpdate' in document, false)
+    }
+  })
+
   it('appends with the supplied transaction session and returns no writable document', async () => {
     const inserts = captureInserts()
     const result = await appendAnnouncementGovernanceEvent(event(), session)
@@ -140,5 +187,23 @@ describe('P10-I5 Announcement governance event model', () => {
       () => appendAnnouncementGovernanceEvent(event(), session),
       /test append failure/,
     )
+  })
+
+  it('keeps removal reason metadata immutable across protected mutation paths', async () => {
+    const model = mongoose.model('AnnouncementGovernanceEvent')
+    assert.equal(model.schema.path('reasonCode').options.immutable, true)
+    assert.equal(model.schema.path('reasonSummary').options.immutable, true)
+    for (const operation of [
+      () => model.updateOne({}, { $set: { reasonSummary: 'Changed' } }),
+      () => model.updateMany({}, { $set: { reasonSummary: 'Changed' } }),
+      () => model.findOneAndUpdate({}, { $set: { reasonSummary: 'Changed' } }),
+      () => model.replaceOne({}, event()),
+      () => model.findOneAndReplace({}, event()),
+      () => model.deleteOne({}),
+      () => model.deleteMany({}),
+      () => model.findOneAndDelete({}),
+    ]) {
+      await assert.rejects(operation, /append-only and cannot be mutated/)
+    }
   })
 })

@@ -14,6 +14,7 @@ import {
 import {
   editPublishedAnnouncement,
   publishAnnouncement,
+  removeAnnouncement,
   restoreAnnouncement,
   transitionAnnouncementMaintenance,
   withdrawAnnouncement,
@@ -29,6 +30,7 @@ import {
 import {
   parseAnnouncementMaintenanceTransitionRequest,
   parseAnnouncementPublishedEditRequest,
+  parseAnnouncementRemovalRequest,
   parseAnnouncementRevisionRequest,
 } from '../utils/announcementGovernancePolicy.js'
 
@@ -150,6 +152,19 @@ export const transitionAnnouncementMaintenanceController = handler<Request<Annou
       parseAnnouncementAdminId(req.params.announcementId),
       actorId(req),
       parseAnnouncementMaintenanceTransitionRequest(req.body),
+    )
+    res.status(StatusCodes.OK).json({ announcement })
+  },
+)
+
+export const removeAnnouncementController = handler<Request<AnnouncementParams>>(
+  async (req, res) => {
+    authorize(req, 'announcement:remove')
+    const announcementId = parseAnnouncementAdminId(req.params.announcementId)
+    const announcement = await removeAnnouncement(
+      announcementId,
+      actorId(req),
+      parseAnnouncementRemovalRequest(req.body),
     )
     res.status(StatusCodes.OK).json({ announcement })
   },

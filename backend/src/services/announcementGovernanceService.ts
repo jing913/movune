@@ -29,6 +29,7 @@ import {
   deriveAnnouncementGovernanceChanges,
   type AnnouncementMaintenanceTransitionRequest,
   type AnnouncementPublishedEditRequest,
+  type AnnouncementRemovalRequest,
   type AnnouncementRevisionRequest,
 } from '../utils/announcementGovernancePolicy.js'
 import { ApiProblem } from '../utils/messagingPolicy.js'
@@ -98,6 +99,8 @@ const isDraftNormal = (record: AnnouncementAdminRecord) =>
 const isWithdrawnNormal = (record: AnnouncementAdminRecord) =>
   record.publicationStatus === 'withdrawn' && record.governanceStatus === 'normal'
 
+const isGovernanceNormal = (record: AnnouncementAdminRecord) => record.governanceStatus === 'normal'
+
 const classifyFailedMutation = async (
   id: string,
   expectedRevision: number,
@@ -119,6 +122,7 @@ const eventWrite = (
   occurredAt: Date,
   changes?: AnnouncementGovernanceChanges,
   updateNote?: string,
+  removalReason?: Pick<AnnouncementRemovalRequest, 'reasonCode' | 'reasonSummary'>,
 ): AnnouncementGovernanceEventWrite => ({
   announcementId: new Types.ObjectId(announcementId),
   actorUserId: new Types.ObjectId(actorUserId),
@@ -127,6 +131,7 @@ const eventWrite = (
   outcome: 'succeeded',
   ...(changes ? { changes } : {}),
   ...(updateNote !== undefined ? { updateNote } : {}),
+  ...(removalReason ?? {}),
 })
 
 export const createAnnouncementGovernanceService = (
@@ -403,6 +408,41 @@ export const createAnnouncementGovernanceService = (
         return shapeAnnouncementAdminDetail(updated)
       })
     },
+
+    remove(id: string, actorUserId: string, input: AnnouncementRemovalRequest) {
+      return transact(async (session) => {
+        const updated = await repository.mutate(
+          {
+            _id: id,
+            revision: input.expectedRevision,
+            governanceStatus: 'normal',
+          },
+          {
+            $set: { governanceStatus: 'exceptionally_removed' },
+            $inc: { revision: 1 },
+          },
+          session,
+        )
+        if (!updated) {
+          return classifyFailedMutation(
+            id,
+            input.expectedRevision,
+            session,
+            repository,
+            isGovernanceNormal,
+          )
+        }
+        const occurredAt = now()
+        await repository.createEvent(
+          eventWrite(id, actorUserId, 'exceptional_removal', occurredAt, undefined, undefined, {
+            reasonCode: input.reasonCode,
+            reasonSummary: input.reasonSummary,
+          }),
+          session,
+        )
+        return shapeAnnouncementAdminDetail(updated)
+      })
+    },
   }
 }
 
@@ -413,3 +453,4 @@ export const editPublishedAnnouncement = announcementGovernanceService.editPubli
 export const withdrawAnnouncement = announcementGovernanceService.withdraw
 export const restoreAnnouncement = announcementGovernanceService.restore
 export const transitionAnnouncementMaintenance = announcementGovernanceService.transitionMaintenance
+export const removeAnnouncement = announcementGovernanceService.remove

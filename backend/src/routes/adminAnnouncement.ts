@@ -7,6 +7,7 @@ import {
   getAdminAnnouncementController,
   listAdminAnnouncementsController,
   publishAnnouncementController,
+  removeAnnouncementController,
   restoreAnnouncementController,
   saveAnnouncementDraftController,
   transitionAnnouncementMaintenanceController,
@@ -25,6 +26,7 @@ router.post('/:announcementId/publish', requireAuth, publishAnnouncementControll
 router.patch('/:announcementId/published-content', requireAuth, editPublishedAnnouncementController)
 router.post('/:announcementId/withdraw', requireAuth, withdrawAnnouncementController)
 router.post('/:announcementId/restore', requireAuth, restoreAnnouncementController)
+router.post('/:announcementId/remove', requireAuth, removeAnnouncementController)
 router.post(
   '/:announcementId/maintenance-transition',
   requireAuth,

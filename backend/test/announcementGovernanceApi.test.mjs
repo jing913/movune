@@ -2,22 +2,24 @@ import assert from 'node:assert/strict'
 import http from 'node:http'
 import { once } from 'node:events'
 import { readFile } from 'node:fs/promises'
-import { afterEach, before, describe, it } from 'node:test'
+import { after, afterEach, before, describe, it } from 'node:test'
 import express from 'express'
 import mongoose, { Types } from 'mongoose'
 import passport from 'passport'
 import { Announcement } from '../dist/models/announcementModel.js'
-import adminAnnouncementRouter from '../dist/routes/adminAnnouncement.js'
 import { errorHandler } from '../dist/middlewares/errorHandler.js'
 
 const originalTransaction = mongoose.connection.transaction
 const originalFindById = Announcement.findById
 const originalFindOneAndUpdate = Announcement.findOneAndUpdate
+const originalFindOneAndDelete = Announcement.findOneAndDelete
 const originalInsertOne = mongoose.Collection.prototype.insertOne
+const originalRemoveAdmins = process.env.ANNOUNCEMENT_REMOVE_ADMIN_USER_IDS
 const servers = new Set()
 const session = { api: 'session' }
 let records = []
 let events = []
+let adminAnnouncementRouter
 
 const body = {
   type: 'document',
@@ -72,9 +74,11 @@ const installPersistence = (values) => {
   Announcement.findById = (announcementId) =>
     query(() => records.find(({ _id }) => _id.toString() === announcementId) ?? null)
   Announcement.findOneAndUpdate = (filter, update, options) => {
-    assert.equal(options.session, session)
-    assert.equal(options.returnDocument, 'after')
-    assert.equal('new' in options, false)
+    if ('returnDocument' in options) {
+      assert.equal(options.session, session)
+      assert.equal(options.returnDocument, 'after')
+      assert.equal('new' in options, false)
+    }
     const current = records.find((candidate) => matches(candidate, filter))
     if (current) {
       Object.assign(current, update.$set)
@@ -83,6 +87,12 @@ const installPersistence = (values) => {
     }
     return query(() => current ?? null)
   }
+  Announcement.findOneAndDelete = (filter) =>
+    query(() => {
+      const index = records.findIndex((candidate) => matches(candidate, filter))
+      if (index < 0) return null
+      return records.splice(index, 1)[0]
+    })
   mongoose.Collection.prototype.insertOne = async function (value, options) {
     assert.deepEqual(options.session, session)
     events.push(value)
@@ -97,6 +107,7 @@ class TestJwtStrategy extends passport.Strategy {
     const token = req.headers.authorization?.replace(/^Bearer /, '')
     if (!token) return this.fail()
     if (token === 'admin') return this.success({ _id: id('91'), role: 'admin' })
+    if (token === 'ordinary-admin') return this.success({ _id: id('94'), role: 'admin' })
     if (token === 'capability-only') {
       return this.success({
         _id: id('92'),
@@ -108,7 +119,16 @@ class TestJwtStrategy extends passport.Strategy {
   }
 }
 
-before(() => passport.use(new TestJwtStrategy()))
+before(async () => {
+  process.env.ANNOUNCEMENT_REMOVE_ADMIN_USER_IDS = id('91').toString()
+  ;({ default: adminAnnouncementRouter } = await import('../dist/routes/adminAnnouncement.js'))
+  passport.use(new TestJwtStrategy())
+})
+
+after(() => {
+  if (originalRemoveAdmins === undefined) delete process.env.ANNOUNCEMENT_REMOVE_ADMIN_USER_IDS
+  else process.env.ANNOUNCEMENT_REMOVE_ADMIN_USER_IDS = originalRemoveAdmins
+})
 
 const startServer = async () => {
   const app = express()
@@ -166,6 +186,7 @@ afterEach(async () => {
   mongoose.connection.transaction = originalTransaction
   Announcement.findById = originalFindById
   Announcement.findOneAndUpdate = originalFindOneAndUpdate
+  Announcement.findOneAndDelete = originalFindOneAndDelete
   mongoose.Collection.prototype.insertOne = originalInsertOne
   records = []
   events = []
@@ -178,7 +199,7 @@ afterEach(async () => {
   )
 })
 
-describe('P10-I5 Announcement governance API', () => {
+describe('P10-I6 Announcement governance API', () => {
   it('requires Passport and rejects ordinary and capability-only users on all five routes', async () => {
     const draft = record('11')
     installPersistence([draft])
@@ -321,7 +342,7 @@ describe('P10-I5 Announcement governance API', () => {
     assert.equal(wrongState.body.error.code, 'ANNOUNCEMENT_STATE_CONFLICT')
   })
 
-  it('maps commands only to the locked centralized permissions and never remove', async () => {
+  it('maps every command to its locked centralized permission', async () => {
     const source = await readFile(
       new URL('../src/controllers/adminAnnouncementController.ts', import.meta.url),
       'utf8',
@@ -334,7 +355,202 @@ describe('P10-I5 Announcement governance API', () => {
     ]) {
       assert.ok(source.includes(`authorize(req, '${permission}')`))
     }
-    assert.equal(source.includes("authorize(req, 'announcement:remove')"), false)
+    assert.equal(source.match(/authorize\(req, 'announcement:remove'\)/g)?.length, 1)
     assert.equal(source.includes("role === 'admin'"), false)
+  })
+
+  it('enforces the elevated remove allowlist independently from standard permissions', async () => {
+    const source = record('11')
+    installPersistence([source])
+    const server = await startServer()
+    const path = `/api/admin/announcements/${source._id}/remove`
+    const requestBody = {
+      expectedRevision: 0,
+      reasonCode: 'privacy',
+      reasonSummary: 'Privacy request',
+    }
+    assert.equal((await request(server, 'POST', path, { body: requestBody })).status, 401)
+    for (const token of ['user', 'capability-only', 'ordinary-admin']) {
+      const response = await request(server, 'POST', path, { token, body: requestBody })
+      assert.equal(response.status, 403)
+      assert.equal(response.body.error.code, 'ANNOUNCEMENT_PERMISSION_DENIED')
+    }
+    const elevated = await request(server, 'POST', path, { token: 'admin', body: requestBody })
+    assert.equal(elevated.status, 200)
+    assert.equal(elevated.body.announcement.governanceStatus, 'exceptionally_removed')
+    assert.equal(events[0].actorUserId.toString(), id('91').toString())
+
+    const malformedPath = '/api/admin/announcements/malformed/remove'
+    assert.equal((await request(server, 'POST', malformedPath, { body: requestBody })).status, 401)
+    for (const token of ['user', 'ordinary-admin']) {
+      const response = await request(server, 'POST', malformedPath, { token, body: requestBody })
+      assert.equal(response.status, 403)
+      assert.equal(response.body.error.code, 'ANNOUNCEMENT_PERMISSION_DENIED')
+    }
+    const authorizedMalformed = await request(server, 'POST', malformedPath, {
+      token: 'admin',
+      body: requestBody,
+    })
+    assert.equal(authorizedMalformed.status, 400)
+    assert.equal(authorizedMalformed.body.error.code, 'ANNOUNCEMENT_ID_INVALID')
+  })
+
+  it('accepts exactly the five removal reasons from every normal publication state', async () => {
+    const reasonCodes = ['privacy', 'legal', 'safety', 'mistaken_publication', 'other']
+    const values = reasonCodes.map((reasonCode, index) =>
+      record(`${index + 1}1`, {
+        publicationStatus: ['draft', 'published', 'withdrawn', 'draft', 'published'][index],
+        ...(index === 0 || index === 3 ? {} : { publishedAt }),
+        priority: 'important',
+        importantUpdate: { at: publishedAt, note: 'Preserve update' },
+      }),
+    )
+    installPersistence(values)
+    const server = await startServer()
+    for (const [index, reasonCode] of reasonCodes.entries()) {
+      const source = values[index]
+      const original = structuredClone(source)
+      const response = await request(
+        server,
+        'POST',
+        `/api/admin/announcements/${source._id}/remove`,
+        {
+          token: 'admin',
+          body: {
+            expectedRevision: 0,
+            reasonCode,
+            reasonSummary: `Required ${reasonCode} removal`,
+          },
+        },
+      )
+      assert.equal(response.status, 200)
+      assert.equal(response.body.announcement.governanceStatus, 'exceptionally_removed')
+      assert.equal(response.body.announcement.publicationStatus, original.publicationStatus)
+      assert.equal(response.body.announcement.revision, 1)
+      assert.equal(source.title, original.title)
+      assert.deepEqual(source.body, original.body)
+      assert.deepEqual(source.importantUpdate, original.importantUpdate)
+      assert.equal(source.publicationStatus, original.publicationStatus)
+      assert.equal(events[index].action, 'exceptional_removal')
+      assert.equal(events[index].reasonCode, reasonCode)
+      assert.equal(events[index].reasonSummary, `Required ${reasonCode} removal`)
+    }
+  })
+
+  it('rejects every malformed exceptional-removal request without mutation or audit', async () => {
+    const source = record('11')
+    installPersistence([source])
+    const server = await startServer()
+    const valid = {
+      expectedRevision: 0,
+      reasonCode: 'privacy',
+      reasonSummary: 'Privacy request',
+    }
+    const invalidBodies = [
+      { ...valid, reasonCode: 'unsupported' },
+      { expectedRevision: 0, reasonSummary: valid.reasonSummary },
+      { expectedRevision: 0, reasonCode: valid.reasonCode },
+      { ...valid, reasonSummary: '' },
+      { ...valid, reasonSummary: '   ' },
+      { ...valid, reasonSummary: ' untrimmed ' },
+      { ...valid, reasonSummary: 'x'.repeat(501) },
+      { ...valid, expectedRevision: -1 },
+      { reasonCode: valid.reasonCode, reasonSummary: valid.reasonSummary },
+      { ...valid, unknown: true },
+      { ...valid, actorUserId: id('99').toString() },
+    ]
+    for (const requestBody of invalidBodies) {
+      const response = await request(
+        server,
+        'POST',
+        `/api/admin/announcements/${source._id}/remove`,
+        { token: 'admin', body: requestBody },
+      )
+      assert.equal(response.status, 400)
+      assert.equal(response.body.error.code, 'ANNOUNCEMENT_REQUEST_INVALID')
+    }
+    assert.equal(source.governanceStatus, 'normal')
+    assert.equal(source.revision, 0)
+    assert.equal(events.length, 0)
+  })
+
+  it('classifies removal state, revision, and missing-record conflicts without audit', async () => {
+    const removed = record('11', { governanceStatus: 'exceptionally_removed' })
+    const stale = record('12', { revision: 2 })
+    installPersistence([removed, stale])
+    const server = await startServer()
+    const input = { reasonCode: 'legal', reasonSummary: 'Legal requirement' }
+    const cases = [
+      [removed._id, 0, 409, 'ANNOUNCEMENT_STATE_CONFLICT'],
+      [stale._id, 1, 409, 'ANNOUNCEMENT_REVISION_CONFLICT'],
+      [id('13'), 0, 404, 'ANNOUNCEMENT_NOT_FOUND'],
+    ]
+    for (const [announcementId, expectedRevision, status, code] of cases) {
+      const response = await request(
+        server,
+        'POST',
+        `/api/admin/announcements/${announcementId}/remove`,
+        { token: 'admin', body: { expectedRevision, ...input } },
+      )
+      assert.equal(response.status, status)
+      assert.equal(response.body.error.code, code)
+    }
+    assert.equal(events.length, 0)
+  })
+
+  it('keeps exceptionally removed announcements terminal across all ordinary mutations', async () => {
+    const removed = record('11', {
+      governanceStatus: 'exceptionally_removed',
+      category: 'system_maintenance',
+      maintenance: maintenance(),
+    })
+    installPersistence([removed])
+    const server = await startServer()
+    const base = `/api/admin/announcements/${removed._id}`
+    const commands = [
+      [
+        'PATCH',
+        base,
+        { expectedRevision: 0, category: 'platform_announcement', priority: 'normal' },
+      ],
+      ['DELETE', base, { expectedRevision: 0 }],
+      ['POST', `${base}/publish`, { expectedRevision: 0 }],
+      [
+        'PATCH',
+        `${base}/published-content`,
+        {
+          expectedRevision: 0,
+          editIntent: 'general_correction',
+          category: 'platform_announcement',
+          priority: 'normal',
+          title: 'Correction',
+          body,
+        },
+      ],
+      [
+        'PATCH',
+        `${base}/published-content`,
+        {
+          expectedRevision: 0,
+          editIntent: 'important_update',
+          category: 'platform_announcement',
+          priority: 'normal',
+          title: 'Update',
+          body,
+          updateNote: 'Not permitted',
+        },
+      ],
+      ['POST', `${base}/withdraw`, { expectedRevision: 0 }],
+      ['POST', `${base}/restore`, { expectedRevision: 0 }],
+      ['POST', `${base}/maintenance-transition`, { expectedRevision: 0, status: 'in_progress' }],
+    ]
+    for (const [method, path, requestBody] of commands) {
+      const response = await request(server, method, path, { token: 'admin', body: requestBody })
+      assert.equal(response.status, 409)
+      assert.equal(response.body.error.code, 'ANNOUNCEMENT_STATE_CONFLICT')
+    }
+    assert.equal(removed.governanceStatus, 'exceptionally_removed')
+    assert.equal(removed.revision, 0)
+    assert.equal(events.length, 0)
   })
 })

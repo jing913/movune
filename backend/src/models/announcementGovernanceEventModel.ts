@@ -15,6 +15,7 @@ export const ANNOUNCEMENT_GOVERNANCE_ACTIONS = [
   'withdraw',
   'restore',
   'maintenance_transition',
+  'exceptional_removal',
 ] as const
 
 export type AnnouncementGovernanceAction = (typeof ANNOUNCEMENT_GOVERNANCE_ACTIONS)[number]
@@ -37,6 +38,8 @@ export interface IAnnouncementGovernanceEvent {
   outcome: 'succeeded'
   changes?: AnnouncementGovernanceChanges
   updateNote?: string
+  reasonCode?: 'privacy' | 'legal' | 'safety' | 'mistaken_publication' | 'other'
+  reasonSummary?: string
   createdAt: Date
 }
 
@@ -53,6 +56,14 @@ const ANNOUNCEMENT_GOVERNANCE_CHANGE_FIELDS = [
   'maintenance.affectedAreas',
   'maintenance.expectedImpact',
   'maintenance.actualCompletionTime',
+] as const
+
+const ANNOUNCEMENT_REMOVAL_REASON_CODES = [
+  'privacy',
+  'legal',
+  'safety',
+  'mistaken_publication',
+  'other',
 ] as const
 
 const categoryChangeSchema = new Schema(
@@ -139,6 +150,37 @@ const announcementGovernanceEventSchema = new Schema(
             : value === undefined
         },
         message: 'updateNote is only valid for important_update and must be non-empty and trimmed',
+      },
+    },
+    reasonCode: {
+      type: String,
+      enum: ANNOUNCEMENT_REMOVAL_REASON_CODES,
+      required: function (this: IAnnouncementGovernanceEvent) {
+        return this.action === 'exceptional_removal'
+      },
+      immutable: true,
+      validate: {
+        validator: function (this: IAnnouncementGovernanceEvent, value: string | undefined) {
+          return this.action === 'exceptional_removal' ? value !== undefined : value === undefined
+        },
+        message: 'reasonCode is only valid and required for exceptional_removal',
+      },
+    },
+    reasonSummary: {
+      type: String,
+      required: function (this: IAnnouncementGovernanceEvent) {
+        return this.action === 'exceptional_removal'
+      },
+      immutable: true,
+      maxlength: 500,
+      validate: {
+        validator: function (this: IAnnouncementGovernanceEvent, value: string | undefined) {
+          return this.action === 'exceptional_removal'
+            ? value !== undefined && value.length > 0 && value === value.trim()
+            : value === undefined
+        },
+        message:
+          'reasonSummary is only valid for exceptional_removal and must be non-empty and trimmed',
       },
     },
   },

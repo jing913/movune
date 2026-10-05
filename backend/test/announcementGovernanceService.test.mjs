@@ -117,7 +117,7 @@ const editInput = (expectedRevision, overrides = {}) => ({
   ...overrides,
 })
 
-describe('P10-I5 Announcement governance service', () => {
+describe('P10-I6 Announcement governance service', () => {
   it('publishes a complete Draft atomically with server time, OCC, and audit', async () => {
     const draft = record()
     const h = harness([draft])
@@ -523,6 +523,141 @@ describe('P10-I5 Announcement governance service', () => {
     assert.equal(h.records[0].revision, 8)
     assert.equal(h.records[0].title, 'First writer')
     assert.equal(h.events.length, 1)
+  })
+
+  it('exceptionally removes every normal publication state while preserving source data', async () => {
+    for (const [index, publicationStatus] of ['draft', 'published', 'withdrawn'].entries()) {
+      const source = record(`${index + 1}1`, {
+        publicationStatus,
+        ...(publicationStatus === 'draft' ? {} : { publishedAt }),
+        category: 'system_maintenance',
+        priority: 'important',
+        title: 'Retained title',
+        body,
+        importantUpdate: { at: now, note: 'Retained update' },
+        maintenance: maintenance(),
+        revision: 4,
+      })
+      const h = harness([source])
+      const result = await h.service.remove(source._id.toString(), id('91').toString(), {
+        expectedRevision: 4,
+        reasonCode: 'privacy',
+        reasonSummary: 'Privacy obligation requires removal',
+      })
+
+      assert.equal(result.governanceStatus, 'exceptionally_removed')
+      assert.equal(result.publicationStatus, publicationStatus)
+      assert.equal(result.revision, 5)
+      assert.equal('title' in result, false)
+      assert.equal('body' in result, false)
+      assert.deepEqual(h.records[0], {
+        ...source,
+        governanceStatus: 'exceptionally_removed',
+        revision: 5,
+        updatedAt: new Date(source.updatedAt.valueOf() + 1),
+      })
+      assert.equal(h.events.length, 1)
+      assert.equal(h.events[0].action, 'exceptional_removal')
+      assert.equal(h.events[0].actorUserId.toString(), id('91').toString())
+      assert.equal(h.events[0].reasonCode, 'privacy')
+      assert.equal(h.events[0].reasonSummary, 'Privacy obligation requires removal')
+      for (const field of ['title', 'body', 'maintenance', 'importantUpdate', 'changes']) {
+        assert.equal(field in h.events[0], false)
+      }
+      const mutation = h.calls.find(({ operation }) => operation === 'mutate')
+      assert.deepEqual(mutation.filter, {
+        _id: source._id.toString(),
+        revision: 4,
+        governanceStatus: 'normal',
+      })
+      assert.deepEqual(mutation.update, {
+        $set: { governanceStatus: 'exceptionally_removed' },
+        $inc: { revision: 1 },
+      })
+      assert.equal(
+        h.calls.every((call) => call.session === h.session),
+        true,
+      )
+    }
+  })
+
+  it('classifies exceptional-removal failures and permits only one same-revision removal', async () => {
+    const missing = harness([])
+    await rejectsCode(
+      () =>
+        missing.service.remove(id('11').toString(), id('91').toString(), {
+          expectedRevision: 0,
+          reasonCode: 'legal',
+          reasonSummary: 'Legal requirement',
+        }),
+      'ANNOUNCEMENT_NOT_FOUND',
+    )
+    assert.equal(missing.events.length, 0)
+
+    const staleSource = record('12', { revision: 3 })
+    const stale = harness([staleSource])
+    await rejectsCode(
+      () =>
+        stale.service.remove(staleSource._id.toString(), id('91').toString(), {
+          expectedRevision: 2,
+          reasonCode: 'safety',
+          reasonSummary: 'Safety requirement',
+        }),
+      'ANNOUNCEMENT_REVISION_CONFLICT',
+    )
+    assert.deepEqual(
+      stale.calls.map(({ operation }) => operation),
+      ['mutate', 'findById'],
+    )
+    assert.equal(stale.events.length, 0)
+
+    const removedSource = record('13', { governanceStatus: 'exceptionally_removed' })
+    const removed = harness([removedSource])
+    await rejectsCode(
+      () =>
+        removed.service.remove(removedSource._id.toString(), id('91').toString(), {
+          expectedRevision: 0,
+          reasonCode: 'other',
+          reasonSummary: 'Already removed',
+        }),
+      'ANNOUNCEMENT_STATE_CONFLICT',
+    )
+    assert.equal(removed.events.length, 0)
+
+    const competingSource = record('14', { revision: 7 })
+    const competing = harness([competingSource])
+    const input = {
+      expectedRevision: 7,
+      reasonCode: 'mistaken_publication',
+      reasonSummary: 'Published in error',
+    }
+    await competing.service.remove(competingSource._id.toString(), id('91').toString(), input)
+    await rejectsCode(
+      () => competing.service.remove(competingSource._id.toString(), id('92').toString(), input),
+      'ANNOUNCEMENT_STATE_CONFLICT',
+    )
+    assert.equal(competing.records[0].revision, 8)
+    assert.equal(competing.events.length, 1)
+  })
+
+  it('rolls back an exceptional removal when its required audit append fails', async () => {
+    const source = record('11', { publicationStatus: 'published', publishedAt, revision: 2 })
+    const h = harness([source], { failEvent: true })
+    await rejectsCode(
+      () =>
+        h.service.remove(source._id.toString(), id('91').toString(), {
+          expectedRevision: 2,
+          reasonCode: 'legal',
+          reasonSummary: 'Court order',
+        }),
+      'ANNOUNCEMENT_GOVERNANCE_TRANSACTION_FAILED',
+    )
+    assert.deepEqual(h.records[0], source)
+    assert.equal(h.events.length, 0)
+    assert.deepEqual(
+      h.calls.map(({ operation }) => operation),
+      ['mutate', 'createEvent'],
+    )
   })
 
   it('rolls back audit failures, preserves known problems, and hides infrastructure details', async () => {
