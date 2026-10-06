@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Film, Inbox, MessageCircle, MoreHorizontal, Send, UserRound } from '@lucide/vue'
 import UserAvatar from '@/components/user/UserAvatar.vue'
+import UserSafetyActions from '@/components/user/UserSafetyActions.vue'
 import NotificationRow from '@/components/notifications/NotificationRow.vue'
 import {
   DropdownMenu,
@@ -360,6 +361,10 @@ async function reconcileActiveDirect(
     ownsPresentation: () => directPresentationOwnership.owns(ownershipToken),
     isCurrentRequest: () => requestVersion === directReconciliationVersion,
   })
+}
+
+function handleDirectSafetyInteraction() {
+  void reconcileActiveDirect('relationship.updated')
 }
 
 async function focusDirectDetailHeading() {
@@ -1394,7 +1399,28 @@ onBeforeUnmount(() => {
                 等待對方回覆
               </p>
             </div>
-            <DropdownMenu v-if="(directOtherUser && canLinkDirectCounterpart) || selectedRoom">
+            <UserSafetyActions
+              v-if="selectedDirect && directOtherUser"
+              :user-id="directOtherUser.id"
+              :display-name="directOtherUser.displayName || directOtherUser.account"
+              :conversation-id="selectedDirect.id"
+              :can-block="selectedDirect.capabilities.canBlockUser"
+              :can-unblock="selectedDirect.capabilities.canUnblockUser"
+              :can-report="true"
+              @interaction-changed="handleDirectSafetyInteraction"
+            >
+              <template v-if="canLinkDirectCounterpart" #before>
+                <DropdownMenuItem as-child>
+                  <RouterLink
+                    :to="{ name: 'public-movie-space', params: { id: directOtherUser.id } }"
+                    class="min-h-10 w-full"
+                  >
+                    查看他的個人主頁
+                  </RouterLink>
+                </DropdownMenuItem>
+              </template>
+            </UserSafetyActions>
+            <DropdownMenu v-else-if="selectedRoom">
               <DropdownMenuTrigger as-child>
                 <button
                   type="button"
@@ -1405,14 +1431,6 @@ onBeforeUnmount(() => {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" class="w-48">
-                <DropdownMenuItem v-if="directOtherUser && canLinkDirectCounterpart" as-child>
-                  <RouterLink
-                    :to="{ name: 'public-movie-space', params: { id: directOtherUser.id } }"
-                    class="min-h-10 w-full"
-                  >
-                    查看他的個人主頁
-                  </RouterLink>
-                </DropdownMenuItem>
                 <DropdownMenuItem v-if="selectedRoom" as-child>
                   <RouterLink :to="`/movies/${selectedRoom.tmdbId}`" class="min-h-10 w-full">
                     查看電影

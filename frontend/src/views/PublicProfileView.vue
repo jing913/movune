@@ -4,7 +4,9 @@ import { useQuery, useQueryCache } from '@pinia/colada'
 import { useRoute } from 'vue-router'
 import MovieCarousel from '@/components/MovieCarousel.vue'
 import UserAvatar from '@/components/user/UserAvatar.vue'
+import UserSafetyActions from '@/components/user/UserSafetyActions.vue'
 import { followUser, getFollowSummary, unfollowUser } from '@/services/follows'
+import type { ContactInteraction } from '@/services/safety'
 import { getMovieDetails, getMovieGenres, type Movie } from '@/services/tmdb'
 import { getDnaMatch, getMovieDna, getMovieSpace } from '@/services/users'
 import { useUserStore } from '@/stores/user'
@@ -19,6 +21,9 @@ const sharedMoviesLoading = ref(false)
 const sharedMoviesError = ref(false)
 const followActionPending = ref(false)
 const followActionError = ref('')
+const safetyInteraction = ref<ContactInteraction | null>(null)
+const relationshipResetByBlock = ref(false)
+const safetyMutationPending = ref(false)
 let sharedMovieRequestVersion = 0
 
 function requireAccessToken() {
@@ -51,6 +56,18 @@ const genreQuery = useQuery({ key: () => ['tmdb', 'movie-genres'], query: getMov
 
 const profile = computed(() => profileQuery.data.value?.user)
 const followSummary = computed(() => followSummaryQuery.data.value)
+const isFollowing = computed(
+  () => !relationshipResetByBlock.value && followSummary.value?.isFollowing === true,
+)
+const canFollow = computed(
+  () => safetyInteraction.value?.capabilities.canFollowUser ?? !followSummary.value?.isSelf,
+)
+const canStartConversation = computed(
+  () =>
+    !safetyInteraction.value ||
+    safetyInteraction.value.capabilities.canSendMessage ||
+    safetyInteraction.value.capabilities.canCreateMessageRequest,
+)
 const genreNames = computed(() =>
   Object.fromEntries((genreQuery.data.value ?? []).map((genre) => [genre.id, genre.name])),
 )
@@ -79,6 +96,11 @@ const movieSpaceTarget = computed(() =>
     ? { name: 'movie-space' }
     : { name: 'public-user-movie-space', params: { id: userId.value } },
 )
+watch(userId, () => {
+  safetyInteraction.value = null
+  relationshipResetByBlock.value = false
+  safetyMutationPending.value = false
+})
 watch(
   () => sharedFavoriteIds.value.join(','),
   async () => {
@@ -106,7 +128,7 @@ async function toggleFollow() {
   followActionPending.value = true
   followActionError.value = ''
   try {
-    if (followSummary.value.isFollowing) await unfollowUser(userId.value, requireAccessToken())
+    if (isFollowing.value) await unfollowUser(userId.value, requireAccessToken())
     else await followUser(userId.value, requireAccessToken())
     queryCache.invalidateQueries({ key: ['follow-summary'] })
     queryCache.invalidateQueries({ key: ['people'] })
@@ -115,6 +137,12 @@ async function toggleFollow() {
   } finally {
     followActionPending.value = false
   }
+}
+
+function handleSafetyInteraction(interaction: ContactInteraction) {
+  safetyInteraction.value = interaction
+  if (interaction.interactionState === 'blocked') relationshipResetByBlock.value = true
+  else void followSummaryQuery.refresh()
 }
 
 function reconcileVisibleProfile() {
@@ -131,9 +159,16 @@ onMounted(() => {
   if (!userStore.accessToken || !userStore.currentUser) return
   connectRealtime(userStore.accessToken, userStore.currentUser._id)
   realtimeCleanups = [
-    onRealtimeConnect(reconcileVisibleProfile),
+    onRealtimeConnect(() => {
+      if (safetyInteraction.value?.interactionState !== 'blocked') reconcileVisibleProfile()
+    }),
     onRealtime('relationship.updated', (payload) => {
-      if (payload.userId === userId.value) reconcileVisibleProfile()
+      if (
+        payload.userId === userId.value &&
+        !safetyMutationPending.value &&
+        safetyInteraction.value?.interactionState !== 'blocked'
+      )
+        reconcileVisibleProfile()
     }),
   ]
 })
@@ -195,7 +230,7 @@ onBeforeUnmount(() => realtimeCleanups.forEach((cleanup) => cleanup()))
             </p>
             <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1">
               <RouterLink
-                v-if="followSummary && !followSummary.isSelf"
+                v-if="followSummary && !followSummary.isSelf && canStartConversation"
                 :to="{ path: '/inbox', query: { tab: 'messages', compose: userId } }"
                 class="inline-flex min-h-11 items-center rounded-md text-sm font-semibold text-foreground underline-offset-4 hover:text-accent-caramel hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
@@ -209,27 +244,41 @@ onBeforeUnmount(() => realtimeCleanups.forEach((cleanup) => cleanup()))
               </RouterLink>
             </div>
           </div>
-          <button
+          <div
             v-if="followSummary && !followSummary.isSelf"
-            type="button"
-            class="min-h-11 shrink-0 rounded-md px-6 font-medium transition-colors disabled:cursor-wait disabled:opacity-60"
-            :class="
-              followSummary.isFollowing
-                ? 'border border-control bg-transparent text-foreground hover:bg-surface-raised'
-                : 'bg-primary-cta text-primary-foreground hover:bg-primary-cta-hover active:bg-primary-cta-pressed'
-            "
-            :disabled="followActionPending"
-            :aria-pressed="followSummary.isFollowing"
-            :aria-busy="followActionPending"
-            :aria-label="
-              followSummary.isFollowing
-                ? `取消關注 ${profile.displayName || profile.account}`
-                : `關注 ${profile.displayName || profile.account}`
-            "
-            @click="toggleFollow"
+            class="flex shrink-0 items-center gap-1"
           >
-            {{ followSummary.isFollowing ? '✓ 已關注' : '+ 關注' }}
-          </button>
+            <button
+              v-if="isFollowing || canFollow"
+              type="button"
+              class="min-h-11 shrink-0 rounded-md px-6 font-medium transition-colors disabled:cursor-wait disabled:opacity-60"
+              :class="
+                isFollowing
+                  ? 'border border-control bg-transparent text-foreground hover:bg-surface-raised'
+                  : 'bg-primary-cta text-primary-foreground hover:bg-primary-cta-hover active:bg-primary-cta-pressed'
+              "
+              :disabled="followActionPending"
+              :aria-pressed="isFollowing"
+              :aria-busy="followActionPending"
+              :aria-label="
+                isFollowing
+                  ? `取消關注 ${profile.displayName || profile.account}`
+                  : `關注 ${profile.displayName || profile.account}`
+              "
+              @click="toggleFollow"
+            >
+              {{ isFollowing ? '✓ 已關注' : '+ 關注' }}
+            </button>
+            <UserSafetyActions
+              :user-id="userId"
+              :display-name="profile.displayName || profile.account"
+              :can-block="safetyInteraction?.capabilities.canBlockUser ?? true"
+              :can-unblock="safetyInteraction?.capabilities.canUnblockUser ?? false"
+              :can-report="safetyInteraction?.capabilities.canReportUser ?? true"
+              @interaction-changed="handleSafetyInteraction"
+              @mutation-pending="safetyMutationPending = $event"
+            />
+          </div>
         </div>
         <p v-if="followActionError" class="mt-4 text-sm font-medium text-destructive" role="alert">
           {{ followActionError }}
