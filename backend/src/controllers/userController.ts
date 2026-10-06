@@ -31,6 +31,7 @@ import {
   loadEffectiveBlockedUserIds,
   memberSocialResourceNotFound,
 } from '../services/memberSocialAccessService.js'
+import { SOCIAL_DISCOVERY_ELIGIBILITY_MATCH } from '../services/socialDiscoveryEligibility.js'
 
 type UserParams = {
   id: string
@@ -150,6 +151,7 @@ export const getUsers = async (
   }
 
   const filter: QueryFilter<IUser> = {
+    ...SOCIAL_DISCOVERY_ELIGIBILITY_MATCH,
     _id: { $ne: req.user._id },
   }
   if (search) {
@@ -256,6 +258,7 @@ export const getMoviePeople = async (
     const favoriteOwnerIds = await Favorite.distinct('userId', { tmdbId })
     const blockedUserIds = await loadEffectiveBlockedUserIds(req.user._id)
     const filter: QueryFilter<IUser> = {
+      ...SOCIAL_DISCOVERY_ELIGIBILITY_MATCH,
       _id: {
         $in: favoriteOwnerIds,
         $ne: req.user._id,

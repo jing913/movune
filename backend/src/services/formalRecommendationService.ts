@@ -10,6 +10,7 @@ import { calculateMatchV1, type MatchV1Favorite } from './matchV1Service.js'
 import { loadPeopleSocialMetadata, type PeopleSocialMetadata } from './peopleService.js'
 import { loadFavoritesForMatch } from '../utils/favoritesProcessingPolicy.js'
 import { loadEffectiveBlockedUserIds } from './memberSocialAccessService.js'
+import { SOCIAL_DISCOVERY_ELIGIBILITY_MATCH } from './socialDiscoveryEligibility.js'
 
 type IdValue = {
   toString(): string
@@ -183,6 +184,7 @@ export const listFormalRecommendations = async (
 
   const blockedUserIds = await loadEffectiveBlockedUserIds(viewerId)
   const candidates = await User.find({
+    ...SOCIAL_DISCOVERY_ELIGIBILITY_MATCH,
     _id: {
       $ne: viewerId,
       ...(blockedUserIds.size > 0 ? { $nin: [...blockedUserIds] } : {}),
