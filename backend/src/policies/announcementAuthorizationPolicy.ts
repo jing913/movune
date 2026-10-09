@@ -1,9 +1,13 @@
-import { isAnnouncementRemoveAdminUserId } from '../configs/announcementAuthorization.js'
+import {
+  isAnnouncementHistoricalBackfillAdminUserId,
+  isAnnouncementRemoveAdminUserId,
+} from '../configs/announcementAuthorization.js'
 
 export const ANNOUNCEMENT_PERMISSIONS = [
   'announcement:create',
   'announcement:edit',
   'announcement:publish',
+  'announcement:historical_backfill',
   'announcement:withdraw',
   'announcement:restore',
   'announcement:remove',
@@ -29,6 +33,7 @@ export type AnnouncementCapabilities = Readonly<{
 }>
 
 export type AnnouncementRemoveAdminMembership = (userId: string) => boolean
+export type AnnouncementHistoricalBackfillAdminMembership = (userId: string) => boolean
 
 const hasStandardPermission = (permission: string) =>
   (STANDARD_ANNOUNCEMENT_PERMISSIONS as readonly string[]).includes(permission)
@@ -37,9 +42,13 @@ export const isAnnouncementAuthorized = (
   user: AnnouncementAuthorizationIdentity | null | undefined,
   permission: string,
   isElevatedRemoveAdmin: AnnouncementRemoveAdminMembership = isAnnouncementRemoveAdminUserId,
+  isHistoricalBackfillAdmin: AnnouncementHistoricalBackfillAdminMembership = isAnnouncementHistoricalBackfillAdminUserId,
 ) => {
   if (!user || user.role !== 'admin') return false
   if (hasStandardPermission(permission)) return true
+  if (permission === 'announcement:historical_backfill') {
+    return isHistoricalBackfillAdmin(user._id.toString().toLowerCase())
+  }
   if (permission !== 'announcement:remove') return false
 
   return isElevatedRemoveAdmin(user._id.toString().toLowerCase())

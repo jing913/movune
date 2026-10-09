@@ -10,6 +10,7 @@ import {
 
 export const ANNOUNCEMENT_GOVERNANCE_ACTIONS = [
   'publish',
+  'historical_publish',
   'published_edit',
   'important_update',
   'withdraw',

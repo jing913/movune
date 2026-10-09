@@ -46,6 +46,9 @@ const clone = (value) => {
 const matches = (candidate, filter) =>
   Object.entries(filter).every(([key, value]) => {
     const actual = key === 'maintenance.status' ? candidate.maintenance?.status : candidate[key]
+    if (value && typeof value === 'object' && '$exists' in value) {
+      return (actual !== undefined) === value.$exists
+    }
     return actual?.toString?.() === value?.toString?.()
   })
 
@@ -133,6 +136,8 @@ describe('P10-I6 Announcement governance service', () => {
       revision: 0,
       publicationStatus: 'draft',
       governanceStatus: 'normal',
+      effectiveAt: { $exists: false },
+      effectiveAtBasis: { $exists: false },
     })
     assert.equal(mutation.update.$inc.revision, 1)
     assert.equal(h.events[0].action, 'publish')
@@ -140,6 +145,89 @@ describe('P10-I6 Announcement governance service', () => {
     assert.equal(
       h.calls.every((call) => call.session === h.session),
       true,
+    )
+  })
+
+  it('historically publishes once with truthful action time and an atomic audit', async () => {
+    const draft = record()
+    const h = harness([draft])
+    const effectiveAt = new Date('2026-10-05T16:00:00.000Z')
+    const result = await h.service.historicalPublish(draft._id.toString(), id('91').toString(), {
+      expectedRevision: 0,
+      effectiveAt,
+      effectiveAtBasis: 'production_verified_no_later_than',
+    })
+    assert.equal(result.publicationStatus, 'published')
+    assert.equal(result.revision, 1)
+    assert.deepEqual(result.publishedAt, now)
+    assert.notDeepEqual(result.publishedAt, effectiveAt)
+    assert.deepEqual(result.effectiveAt, effectiveAt)
+    assert.equal(result.effectiveAtBasis, 'production_verified_no_later_than')
+    assert.equal(h.events.length, 1)
+    assert.equal(h.events[0].action, 'historical_publish')
+    assert.deepEqual(h.events[0].occurredAt, now)
+    assert.notDeepEqual(h.events[0].occurredAt, effectiveAt)
+    assert.equal(h.calls.filter(({ operation }) => operation === 'mutate').length, 1)
+    assert.equal(h.calls.filter(({ operation }) => operation === 'createEvent').length, 1)
+    assert.equal(
+      h.calls.every((call) => call.session === h.session),
+      true,
+    )
+  })
+
+  it('classifies historical state and revision conflicts without retry or audit', async () => {
+    const staleDraft = record('11', { revision: 2 })
+    const stale = harness([staleDraft])
+    await rejectsCode(
+      () =>
+        stale.service.historicalPublish(staleDraft._id.toString(), id('91').toString(), {
+          expectedRevision: 1,
+          effectiveAt: new Date('2026-10-05T16:00:00.000Z'),
+          effectiveAtBasis: 'production_verified_no_later_than',
+        }),
+      'ANNOUNCEMENT_REVISION_CONFLICT',
+    )
+    assert.equal(stale.calls.filter(({ operation }) => operation === 'mutate').length, 1)
+    assert.equal(stale.events.length, 0)
+
+    for (const overrides of [
+      { publicationStatus: 'published', publishedAt },
+      { governanceStatus: 'exceptionally_removed' },
+      {
+        effectiveAt: new Date('2026-10-05T16:00:00.000Z'),
+        effectiveAtBasis: 'production_verified_no_later_than',
+      },
+    ]) {
+      const wrong = record('12', overrides)
+      await rejectsCode(
+        () =>
+          harness([wrong]).service.historicalPublish(wrong._id.toString(), id('91').toString(), {
+            expectedRevision: 0,
+            effectiveAt: new Date('2026-10-05T16:00:00.000Z'),
+            effectiveAtBasis: 'production_verified_no_later_than',
+          }),
+        'ANNOUNCEMENT_STATE_CONFLICT',
+      )
+    }
+  })
+
+  it('rolls back historical publication when its audit append fails', async () => {
+    const draft = record()
+    const h = harness([draft], { failEvent: true })
+    await rejectsCode(
+      () =>
+        h.service.historicalPublish(draft._id.toString(), id('91').toString(), {
+          expectedRevision: 0,
+          effectiveAt: new Date('2026-10-05T16:00:00.000Z'),
+          effectiveAtBasis: 'production_verified_no_later_than',
+        }),
+      'ANNOUNCEMENT_GOVERNANCE_TRANSACTION_FAILED',
+    )
+    assert.deepEqual(h.records[0], draft)
+    assert.equal(h.events.length, 0)
+    assert.deepEqual(
+      h.calls.map(({ operation }) => operation),
+      ['findById', 'mutate', 'createEvent'],
     )
   })
 
@@ -200,6 +288,8 @@ describe('P10-I6 Announcement governance service', () => {
       publishedAt,
       revision: 2,
       importantUpdate: previous,
+      effectiveAt: new Date('2026-10-05T16:00:00.000Z'),
+      effectiveAtBasis: 'production_verified_no_later_than',
     })
     const h = harness([published])
     const corrected = await h.service.editPublished(
@@ -209,6 +299,8 @@ describe('P10-I6 Announcement governance service', () => {
     )
     assert.deepEqual(corrected.publishedAt, publishedAt)
     assert.deepEqual(corrected.importantUpdate, previous)
+    assert.deepEqual(corrected.effectiveAt, published.effectiveAt)
+    assert.equal(corrected.effectiveAtBasis, published.effectiveAtBasis)
     assert.equal(corrected.revision, 3)
     assert.equal(h.events[0].action, 'published_edit')
     assert.equal('updateNote' in h.events[0], false)
@@ -230,6 +322,8 @@ describe('P10-I6 Announcement governance service', () => {
       at: now,
       note: 'New operational information',
     })
+    assert.deepEqual(important.effectiveAt, published.effectiveAt)
+    assert.equal(important.effectiveAtBasis, published.effectiveAtBasis)
     assert.equal(important.priority, 'normal')
     assert.equal(important.revision, 4)
     assert.equal(h.events[1].action, 'important_update')
@@ -351,6 +445,8 @@ describe('P10-I6 Announcement governance service', () => {
       publishedAt,
       revision: 4,
       importantUpdate: { at: now, note: 'Latest' },
+      effectiveAt: new Date('2026-10-05T16:00:00.000Z'),
+      effectiveAtBasis: 'production_verified_no_later_than',
     })
     const h = harness([published])
     const withdrawn = await h.service.withdraw(published._id.toString(), id('91').toString(), {
@@ -361,6 +457,8 @@ describe('P10-I6 Announcement governance service', () => {
     assert.deepEqual(withdrawn.body, body)
     assert.deepEqual(withdrawn.maintenance, published.maintenance)
     assert.deepEqual(withdrawn.importantUpdate, published.importantUpdate)
+    assert.deepEqual(withdrawn.effectiveAt, published.effectiveAt)
+    assert.equal(withdrawn.effectiveAtBasis, published.effectiveAtBasis)
     assert.equal(withdrawn.revision, 5)
     assert.equal(h.events[0].action, 'withdraw')
     const restored = await h.service.restore(published._id.toString(), id('91').toString(), {
@@ -369,6 +467,8 @@ describe('P10-I6 Announcement governance service', () => {
     assert.equal(restored.publicationStatus, 'published')
     assert.deepEqual(restored.publishedAt, publishedAt)
     assert.deepEqual(restored.importantUpdate, published.importantUpdate)
+    assert.deepEqual(restored.effectiveAt, published.effectiveAt)
+    assert.equal(restored.effectiveAtBasis, published.effectiveAtBasis)
     assert.equal(restored.revision, 6)
     assert.equal(h.events[1].action, 'restore')
 
@@ -435,6 +535,8 @@ describe('P10-I6 Announcement governance service', () => {
         publicationStatus: 'published',
         publishedAt,
         importantUpdate: { at: publishedAt, note: 'Preserve' },
+        effectiveAt: new Date('2026-10-05T16:00:00.000Z'),
+        effectiveAtBasis: 'production_verified_no_later_than',
       })
       const h = harness([source])
       const result = await h.service.transitionMaintenance(
@@ -450,6 +552,8 @@ describe('P10-I6 Announcement governance service', () => {
       assert.equal(result.revision, 1)
       assert.deepEqual(result.publishedAt, publishedAt)
       assert.deepEqual(result.importantUpdate, source.importantUpdate)
+      assert.deepEqual(result.effectiveAt, source.effectiveAt)
+      assert.equal(result.effectiveAtBasis, source.effectiveAtBasis)
       if (to === 'completed') assert.deepEqual(result.maintenance.actualCompletionTime, now)
       assert.deepEqual(h.events[0].changes.maintenanceStatus, { from, to })
       const mutation = h.calls.find(({ operation }) => operation === 'mutate')
@@ -537,6 +641,12 @@ describe('P10-I6 Announcement governance service', () => {
         importantUpdate: { at: now, note: 'Retained update' },
         maintenance: maintenance(),
         revision: 4,
+        ...(publicationStatus === 'draft'
+          ? {}
+          : {
+              effectiveAt: new Date('2026-10-05T16:00:00.000Z'),
+              effectiveAtBasis: 'production_verified_no_later_than',
+            }),
       })
       const h = harness([source])
       const result = await h.service.remove(source._id.toString(), id('91').toString(), {
@@ -548,6 +658,10 @@ describe('P10-I6 Announcement governance service', () => {
       assert.equal(result.governanceStatus, 'exceptionally_removed')
       assert.equal(result.publicationStatus, publicationStatus)
       assert.equal(result.revision, 5)
+      if (source.effectiveAt) {
+        assert.deepEqual(h.records[0].effectiveAt, source.effectiveAt)
+        assert.equal(h.records[0].effectiveAtBasis, source.effectiveAtBasis)
+      }
       assert.equal('title' in result, false)
       assert.equal('body' in result, false)
       assert.deepEqual(h.records[0], {

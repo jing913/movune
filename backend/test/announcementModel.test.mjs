@@ -115,6 +115,24 @@ describe('P10-I1 Announcement persistence contract', () => {
     await assert.doesNotReject(() => announcement({ title: undefined, body: undefined }).validate())
   })
 
+  it('enforces the exact paired historical metadata contract', async () => {
+    const effectiveAt = new Date('2026-10-05T16:00:00.000Z')
+    await assert.doesNotReject(() => announcement().validate())
+    await assert.doesNotReject(() =>
+      announcement({
+        effectiveAt,
+        effectiveAtBasis: 'production_verified_no_later_than',
+      }).validate(),
+    )
+    await assert.rejects(() => announcement({ effectiveAt }).validate())
+    await assert.rejects(() =>
+      announcement({ effectiveAtBasis: 'production_verified_no_later_than' }).validate(),
+    )
+    await assert.rejects(() =>
+      announcement({ effectiveAt, effectiveAtBasis: 'exact_release_time' }).validate(),
+    )
+  })
+
   it('rejects malformed present partial maintenance values', async () => {
     for (const maintenanceValue of [
       { status: 'invalid' },
@@ -141,6 +159,8 @@ describe('P10-I1 Announcement persistence contract', () => {
         'body',
         'category',
         'createdAt',
+        'effectiveAt',
+        'effectiveAtBasis',
         'governanceStatus',
         'importantUpdate',
         'maintenance',
@@ -152,5 +172,19 @@ describe('P10-I1 Announcement persistence contract', () => {
         'updatedAt',
       ].sort(),
     )
+    for (const forbidden of [
+      'effectiveAtPrecision',
+      'evidenceUpperBoundAt',
+      'evidenceTimezone',
+      'sourceSha',
+      'deploymentReference',
+      'acceptanceReference',
+      'evidenceDocumentReference',
+      'historicalSequence',
+      'editorialSequence',
+      'orderingAt',
+    ]) {
+      assert.equal(Announcement.schema.path(forbidden), undefined)
+    }
   })
 })

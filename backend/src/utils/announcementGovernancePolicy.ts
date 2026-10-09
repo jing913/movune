@@ -7,8 +7,18 @@ import type {
 } from '../policies/announcementLifecyclePolicy.js'
 import type { AnnouncementGovernanceChanges } from '../models/announcementGovernanceEventModel.js'
 import { ApiProblem } from './messagingPolicy.js'
+import {
+  ANNOUNCEMENT_EFFECTIVE_AT_BASES,
+  normalizeAnnouncementEffectiveDate,
+  type AnnouncementEffectiveAtBasis,
+} from './announcementHistoricalPolicy.js'
 
 export type AnnouncementRevisionRequest = Readonly<{ expectedRevision: number }>
+export type AnnouncementHistoricalPublishRequest = Readonly<{
+  expectedRevision: number
+  effectiveAt: Date
+  effectiveAtBasis: AnnouncementEffectiveAtBasis
+}>
 export const ANNOUNCEMENT_REMOVAL_REASON_CODES = [
   'privacy',
   'legal',
@@ -102,6 +112,34 @@ export const parseAnnouncementRevisionRequest = (value: unknown): AnnouncementRe
     throw announcementGovernanceRequestInvalid()
   }
   return { expectedRevision: parseRevision(value.expectedRevision) }
+}
+
+export const parseAnnouncementHistoricalPublishRequest = (
+  value: unknown,
+): AnnouncementHistoricalPublishRequest => {
+  if (
+    !isRecord(value) ||
+    !exactKeys(
+      value,
+      ['expectedRevision', 'effectiveAt', 'effectiveAtBasis'],
+      ['expectedRevision', 'effectiveAt', 'effectiveAtBasis'],
+    ) ||
+    typeof value.effectiveAt !== 'string' ||
+    typeof value.effectiveAtBasis !== 'string' ||
+    !(ANNOUNCEMENT_EFFECTIVE_AT_BASES as readonly string[]).includes(value.effectiveAtBasis)
+  ) {
+    throw announcementGovernanceRequestInvalid()
+  }
+
+  try {
+    return {
+      expectedRevision: parseRevision(value.expectedRevision),
+      effectiveAt: normalizeAnnouncementEffectiveDate(value.effectiveAt),
+      effectiveAtBasis: value.effectiveAtBasis as AnnouncementEffectiveAtBasis,
+    }
+  } catch {
+    throw announcementGovernanceRequestInvalid()
+  }
 }
 
 export const parseAnnouncementRemovalRequest = (value: unknown): AnnouncementRemovalRequest => {

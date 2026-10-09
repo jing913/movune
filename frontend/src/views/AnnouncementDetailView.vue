@@ -77,6 +77,11 @@ function formatTaipeiDate(value: string) {
   return parts ? `${parts.year} 年 ${parts.month} 月 ${parts.day} 日` : ''
 }
 
+function formatHistoricalDate(value: string) {
+  const parts = getTaipeiParts(value)
+  return parts ? `${parts.year}/${parts.month.padStart(2, '0')}/${parts.day.padStart(2, '0')}` : ''
+}
+
 function formatTaipeiDateTime(value: string) {
   const parts = getTaipeiParts(value)
   return parts
@@ -239,7 +244,10 @@ onBeforeUnmount(() => {
           {{ announcement.title }}
         </h1>
         <p class="mt-4 text-sm text-muted-foreground">
-          發布於 {{ formatTaipeiDate(announcement.publishedAt) }}
+          <template v-if="announcement.effectiveAt">
+            上線於 {{ formatHistoricalDate(announcement.effectiveAt) }}
+          </template>
+          <template v-else>發布於 {{ formatTaipeiDate(announcement.publishedAt) }}</template>
         </p>
       </header>
 

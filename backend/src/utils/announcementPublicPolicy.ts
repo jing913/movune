@@ -7,10 +7,10 @@ import { ApiProblem } from './messagingPolicy.js'
 
 export const ANNOUNCEMENT_PUBLIC_DEFAULT_LIMIT = 20
 export const ANNOUNCEMENT_PUBLIC_MAX_LIMIT = 50
-export const announcementPublicSort = { publishedAt: -1, _id: -1 } as const
+export const announcementPublicSort = { orderingAt: -1, _id: -1 } as const
 
 export type AnnouncementPublicCursor = Readonly<{
-  publishedAt: Date
+  orderingAt: Date
   id: string
 }>
 
@@ -41,7 +41,7 @@ export const parseAnnouncementPublicLimit = (value: unknown) => {
 
 export const encodeAnnouncementPublicCursor = (cursor: AnnouncementPublicCursor) =>
   Buffer.from(
-    JSON.stringify({ publishedAt: cursor.publishedAt.toISOString(), id: cursor.id }),
+    JSON.stringify({ orderingAt: cursor.orderingAt.toISOString(), id: cursor.id }),
     'utf8',
   ).toString('base64url')
 
@@ -64,24 +64,26 @@ export const decodeAnnouncementPublicCursor = (value: unknown): AnnouncementPubl
     const keys = Object.keys(parsed)
     if (
       keys.length !== 2 ||
-      !keys.includes('publishedAt') ||
+      (!keys.includes('orderingAt') && !keys.includes('publishedAt')) ||
       !keys.includes('id') ||
-      !('publishedAt' in parsed) ||
       !('id' in parsed) ||
-      typeof parsed.publishedAt !== 'string' ||
       typeof parsed.id !== 'string' ||
       !isObjectIdOrHexString(parsed.id)
     ) {
       throw new Error()
     }
-    const publishedAt = new Date(parsed.publishedAt)
-    if (
-      !Number.isFinite(publishedAt.valueOf()) ||
-      publishedAt.toISOString() !== parsed.publishedAt
-    ) {
+    const encodedOrderingAt =
+      'orderingAt' in parsed && typeof parsed.orderingAt === 'string'
+        ? parsed.orderingAt
+        : 'publishedAt' in parsed && typeof parsed.publishedAt === 'string'
+          ? parsed.publishedAt
+          : null
+    if (encodedOrderingAt === null) throw new Error()
+    const orderingAt = new Date(encodedOrderingAt)
+    if (!Number.isFinite(orderingAt.valueOf()) || orderingAt.toISOString() !== encodedOrderingAt) {
       throw new Error()
     }
-    return { publishedAt, id: new Types.ObjectId(parsed.id).toHexString() }
+    return { orderingAt, id: new Types.ObjectId(parsed.id).toHexString() }
   } catch (error) {
     if (error instanceof ApiProblem) throw error
     throw problem('ANNOUNCEMENT_CURSOR_INVALID', 'Announcement cursor is invalid')
@@ -92,9 +94,9 @@ export const buildAnnouncementPublicCursorFilter = (cursor: AnnouncementPublicCu
   cursor
     ? {
         $or: [
-          { publishedAt: { $lt: cursor.publishedAt } },
+          { orderingAt: { $lt: cursor.orderingAt } },
           {
-            publishedAt: cursor.publishedAt,
+            orderingAt: cursor.orderingAt,
             _id: { $lt: new Types.ObjectId(cursor.id) },
           },
         ],

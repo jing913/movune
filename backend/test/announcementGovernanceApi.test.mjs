@@ -15,6 +15,7 @@ const originalFindOneAndUpdate = Announcement.findOneAndUpdate
 const originalFindOneAndDelete = Announcement.findOneAndDelete
 const originalInsertOne = mongoose.Collection.prototype.insertOne
 const originalRemoveAdmins = process.env.ANNOUNCEMENT_REMOVE_ADMIN_USER_IDS
+const originalHistoricalAdmins = process.env.ANNOUNCEMENT_HISTORICAL_BACKFILL_ADMIN_USER_IDS
 const servers = new Set()
 const session = { api: 'session' }
 let records = []
@@ -64,6 +65,9 @@ const query = (getValue) => ({
 const matches = (candidate, filter) =>
   Object.entries(filter).every(([key, value]) => {
     const actual = key === 'maintenance.status' ? candidate.maintenance?.status : candidate[key]
+    if (value && typeof value === 'object' && '$exists' in value) {
+      return (actual !== undefined) === value.$exists
+    }
     return actual?.toString?.() === value?.toString?.()
   })
 
@@ -121,6 +125,7 @@ class TestJwtStrategy extends passport.Strategy {
 
 before(async () => {
   process.env.ANNOUNCEMENT_REMOVE_ADMIN_USER_IDS = id('91').toString()
+  process.env.ANNOUNCEMENT_HISTORICAL_BACKFILL_ADMIN_USER_IDS = id('91').toString()
   ;({ default: adminAnnouncementRouter } = await import('../dist/routes/adminAnnouncement.js'))
   passport.use(new TestJwtStrategy())
 })
@@ -128,6 +133,11 @@ before(async () => {
 after(() => {
   if (originalRemoveAdmins === undefined) delete process.env.ANNOUNCEMENT_REMOVE_ADMIN_USER_IDS
   else process.env.ANNOUNCEMENT_REMOVE_ADMIN_USER_IDS = originalRemoveAdmins
+  if (originalHistoricalAdmins === undefined) {
+    delete process.env.ANNOUNCEMENT_HISTORICAL_BACKFILL_ADMIN_USER_IDS
+  } else {
+    process.env.ANNOUNCEMENT_HISTORICAL_BACKFILL_ADMIN_USER_IDS = originalHistoricalAdmins
+  }
 })
 
 const startServer = async () => {
@@ -200,6 +210,71 @@ afterEach(async () => {
 })
 
 describe('P10-I6 Announcement governance API', () => {
+  it('enforces the independent historical authorization boundary and exact endpoint contract', async () => {
+    const draft = record('11')
+    installPersistence([draft])
+    const server = await startServer()
+    const path = `/api/admin/announcements/${draft._id}/historical-publish`
+    const requestBody = {
+      expectedRevision: 0,
+      effectiveAt: '2026-10-06',
+      effectiveAtBasis: 'production_verified_no_later_than',
+    }
+    assert.equal((await request(server, 'POST', path, { body: requestBody })).status, 401)
+    for (const token of ['user', 'capability-only', 'ordinary-admin']) {
+      const response = await request(server, 'POST', path, { token, body: requestBody })
+      assert.equal(response.status, 403)
+      assert.equal(response.body.error.code, 'ANNOUNCEMENT_PERMISSION_DENIED')
+    }
+
+    const published = await request(server, 'POST', path, { token: 'admin', body: requestBody })
+    assert.equal(published.status, 200)
+    assert.equal(published.body.announcement.publicationStatus, 'published')
+    assert.equal(published.body.announcement.revision, 1)
+    assert.equal(published.body.announcement.effectiveAt, '2026-10-05T16:00:00.000Z')
+    assert.equal(published.body.announcement.effectiveAtBasis, 'production_verified_no_later_than')
+    assert.notEqual(
+      published.body.announcement.publishedAt,
+      published.body.announcement.effectiveAt,
+    )
+    assert.deepEqual(
+      events.map(({ action }) => action),
+      ['historical_publish'],
+    )
+  })
+
+  it('rejects malformed or extended historical-publish requests before mutation', async () => {
+    const valid = {
+      expectedRevision: 0,
+      effectiveAt: '2026-10-06',
+      effectiveAtBasis: 'production_verified_no_later_than',
+    }
+    for (const requestBody of [
+      { ...valid, effectiveAt: '2026-02-29' },
+      { ...valid, effectiveAt: '2026-10-06T00:00:00.000Z' },
+      { ...valid, effectiveAtBasis: 'exact_release_time' },
+      { ...valid, extra: true },
+      { effectiveAt: valid.effectiveAt, effectiveAtBasis: valid.effectiveAtBasis },
+    ]) {
+      const draft = record('11')
+      installPersistence([draft])
+      const server = await startServer()
+      const response = await request(
+        server,
+        'POST',
+        `/api/admin/announcements/${draft._id}/historical-publish`,
+        { token: 'admin', body: requestBody },
+      )
+      assert.equal(response.status, 400)
+      assert.equal(response.body.error.code, 'ANNOUNCEMENT_REQUEST_INVALID')
+      assert.equal(draft.revision, 0)
+      assert.equal(events.length, 0)
+      server.close()
+      await once(server, 'close')
+      servers.delete(server)
+    }
+  })
+
   it('requires Passport and rejects ordinary and capability-only users on all five routes', async () => {
     const draft = record('11')
     installPersistence([draft])
@@ -349,6 +424,7 @@ describe('P10-I6 Announcement governance API', () => {
     )
     for (const permission of [
       'announcement:publish',
+      'announcement:historical_backfill',
       'announcement:edit',
       'announcement:withdraw',
       'announcement:restore',

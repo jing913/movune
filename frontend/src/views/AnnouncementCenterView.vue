@@ -58,6 +58,20 @@ function formatPublishedDate(value: string) {
     : ''
 }
 
+function formatHistoricalDate(value: string) {
+  const date = new Date(value)
+  if (!Number.isFinite(date.valueOf())) return ''
+  const parts = Object.fromEntries(
+    publishedDateFormatter
+      .formatToParts(date)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
+  )
+  return parts.year && parts.month && parts.day
+    ? `${parts.year}/${parts.month.padStart(2, '0')}/${parts.day.padStart(2, '0')}`
+    : ''
+}
+
 function currentCategoryParameter() {
   return selectedCategory.value === 'all' ? undefined : selectedCategory.value
 }
@@ -233,7 +247,12 @@ onBeforeUnmount(() => {
                 </RouterLink>
               </h3>
               <p class="mt-3 text-sm text-muted-foreground">
-                發布於 {{ formatPublishedDate(announcement.publishedAt) }}
+                <template v-if="announcement.effectiveAt">
+                  上線於 {{ formatHistoricalDate(announcement.effectiveAt) }}
+                </template>
+                <template v-else
+                  >發布於 {{ formatPublishedDate(announcement.publishedAt) }}</template
+                >
               </p>
             </article>
           </li>

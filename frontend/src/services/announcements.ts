@@ -66,6 +66,7 @@ export type AnnouncementPublicListItem = Readonly<{
   priority: AnnouncementPriority
   title: string
   publishedAt: string
+  effectiveAt?: string
   importantUpdate?: AnnouncementImportantUpdate
   maintenance?: AnnouncementMaintenance
 }>

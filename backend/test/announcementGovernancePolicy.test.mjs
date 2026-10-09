@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 import { Types } from 'mongoose'
 import {
   deriveAnnouncementGovernanceChanges,
+  parseAnnouncementHistoricalPublishRequest,
   parseAnnouncementMaintenanceTransitionRequest,
   parseAnnouncementPublishedEditRequest,
   parseAnnouncementRevisionRequest,
@@ -35,6 +36,46 @@ const assertRequestInvalid = (operation) =>
   )
 
 describe('P10-I5 Announcement governance policy', () => {
+  it('accepts only the exact historical-publish request and normalizes its logical date', () => {
+    const parsed = parseAnnouncementHistoricalPublishRequest({
+      expectedRevision: 0,
+      effectiveAt: '2026-10-06',
+      effectiveAtBasis: 'production_verified_no_later_than',
+    })
+    assert.equal(parsed.expectedRevision, 0)
+    assert.equal(parsed.effectiveAt.toISOString(), '2026-10-05T16:00:00.000Z')
+    assert.equal(parsed.effectiveAtBasis, 'production_verified_no_later_than')
+
+    for (const invalid of [
+      {},
+      { effectiveAt: '2026-10-06', effectiveAtBasis: 'production_verified_no_later_than' },
+      {
+        expectedRevision: -1,
+        effectiveAt: '2026-10-06',
+        effectiveAtBasis: 'production_verified_no_later_than',
+      },
+      {
+        expectedRevision: 0,
+        effectiveAt: '2026-02-29',
+        effectiveAtBasis: 'production_verified_no_later_than',
+      },
+      {
+        expectedRevision: 0,
+        effectiveAt: '2026-10-06T00:00:00.000Z',
+        effectiveAtBasis: 'production_verified_no_later_than',
+      },
+      { expectedRevision: 0, effectiveAt: '2026-10-06', effectiveAtBasis: 'exact_release_time' },
+      {
+        expectedRevision: 0,
+        effectiveAt: '2026-10-06',
+        effectiveAtBasis: 'production_verified_no_later_than',
+        extra: true,
+      },
+    ]) {
+      assertRequestInvalid(() => parseAnnouncementHistoricalPublishRequest(invalid))
+    }
+  })
+
   it('accepts only the exact revision command request', () => {
     assert.deepEqual(parseAnnouncementRevisionRequest({ expectedRevision: 0 }), {
       expectedRevision: 0,

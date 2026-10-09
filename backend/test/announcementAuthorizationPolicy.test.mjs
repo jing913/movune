@@ -12,7 +12,8 @@ const adminId = '507f191e810c19729de860ea'
 const normalUser = { _id: normalId, role: 'user' }
 const ordinaryAdmin = { _id: adminId, role: 'admin' }
 const standardPermissions = ANNOUNCEMENT_PERMISSIONS.filter(
-  (permission) => permission !== 'announcement:remove',
+  (permission) =>
+    permission !== 'announcement:remove' && permission !== 'announcement:historical_backfill',
 )
 const membership =
   (...ids) =>
@@ -45,14 +46,50 @@ describe('P10-I2 Announcement authorization policy', () => {
     )
   })
 
-  it('grants all six permissions to an elevated admin', () => {
+  it('grants all permissions only when both independent memberships are present', () => {
     for (const permission of ANNOUNCEMENT_PERMISSIONS) {
       assert.equal(
-        isAnnouncementAuthorized(ordinaryAdmin, permission, membership(adminId)),
+        isAnnouncementAuthorized(
+          ordinaryAdmin,
+          permission,
+          membership(adminId),
+          membership(adminId),
+        ),
         true,
         permission,
       )
     }
+  })
+
+  it('requires the dedicated historical permission and independent allowlist', () => {
+    assert.equal(isAnnouncementAuthorized(ordinaryAdmin, 'announcement:publish'), true)
+    assert.equal(
+      isAnnouncementAuthorized(
+        ordinaryAdmin,
+        'announcement:historical_backfill',
+        membership(adminId),
+        membership(),
+      ),
+      false,
+    )
+    assert.equal(
+      isAnnouncementAuthorized(
+        ordinaryAdmin,
+        'announcement:historical_backfill',
+        membership(),
+        membership(adminId),
+      ),
+      true,
+    )
+    assert.equal(
+      isAnnouncementAuthorized(
+        normalUser,
+        'announcement:historical_backfill',
+        membership(),
+        membership(normalId),
+      ),
+      false,
+    )
   })
 
   it('requires both admin identity and allowlist membership for removal', () => {

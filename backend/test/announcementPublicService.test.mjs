@@ -35,11 +35,12 @@ const matches = (candidate, filter) => {
   if (candidate.governanceStatus !== filter.governanceStatus) return false
   if (filter.category && candidate.category !== filter.category) return false
   if (!filter.$or) return true
-  const boundaryTime = filter.$or[0].publishedAt.$lt
+  const boundaryTime = filter.$or[0].orderingAt.$lt
   const boundaryId = filter.$or[1]._id.$lt.toString()
+  const candidateOrderingAt = candidate.effectiveAt ?? candidate.publishedAt
   return (
-    candidate.publishedAt < boundaryTime ||
-    (candidate.publishedAt.valueOf() === boundaryTime.valueOf() &&
+    candidateOrderingAt < boundaryTime ||
+    (candidateOrderingAt.valueOf() === boundaryTime.valueOf() &&
       candidate._id.toString() < boundaryId)
   )
 }
@@ -51,10 +52,14 @@ const repositoryFor = (records) => {
     async list(filter, sort, limit) {
       calls.push({ filter, sort, limit })
       return records
+        .map((candidate) => ({
+          ...candidate,
+          orderingAt: candidate.effectiveAt ?? candidate.publishedAt,
+        }))
         .filter((candidate) => matches(candidate, filter))
         .sort(
           (left, right) =>
-            right.publishedAt.valueOf() - left.publishedAt.valueOf() ||
+            right.orderingAt.valueOf() - left.orderingAt.valueOf() ||
             right._id.toString().localeCompare(left._id.toString()),
         )
         .slice(0, limit)
@@ -103,7 +108,7 @@ describe('P10-I3 Announcement public service', () => {
       all.announcements.map(({ id }) => id).sort(),
       [records[0]._id.toString(), records[4]._id.toString()].sort(),
     )
-    assert.deepEqual(repository.calls[0].sort, { publishedAt: -1, _id: -1 })
+    assert.deepEqual(repository.calls[0].sort, { orderingAt: -1, _id: -1 })
     assert.equal(repository.calls[0].limit, 21)
     assert.equal(repository.calls[0].filter.publicationStatus, 'published')
     assert.equal(repository.calls[0].filter.governanceStatus, 'normal')
@@ -120,12 +125,20 @@ describe('P10-I3 Announcement public service', () => {
     assert.equal(repository.calls[1].filter.category, 'feature_update')
   })
 
-  it('orders ties by descending id and paginates without duplicate or omission', async () => {
+  it('mixes historical and ordinary ordering, resolves ties by id, and paginates safely', async () => {
     const records = [
       record('11', { publishedAt: time(12) }),
-      record('12', { publishedAt: time(11) }),
+      record('12', {
+        publishedAt: time(20),
+        effectiveAt: time(11),
+        effectiveAtBasis: 'production_verified_no_later_than',
+      }),
       record('13', { publishedAt: time(11) }),
-      record('14', { publishedAt: time(10) }),
+      record('14', {
+        publishedAt: time(20),
+        effectiveAt: time(10),
+        effectiveAtBasis: 'production_verified_no_later_than',
+      }),
       record('15', { publishedAt: time(9) }),
     ]
     const repository = repositoryFor(records)
@@ -146,13 +159,28 @@ describe('P10-I3 Announcement public service', () => {
     const expected = [...records]
       .sort(
         (left, right) =>
-          right.publishedAt.valueOf() - left.publishedAt.valueOf() ||
+          (right.effectiveAt ?? right.publishedAt).valueOf() -
+            (left.effectiveAt ?? left.publishedAt).valueOf() ||
           right._id.toString().localeCompare(left._id.toString()),
       )
       .map(({ _id }) => _id.toString())
     assert.deepEqual(actual, expected)
     assert.equal(new Set(actual).size, records.length)
     assert.equal(third.nextCursor, null)
+  })
+
+  it('exposes effectiveAt but never effectiveAtBasis on available historical records', async () => {
+    const historical = record('11', {
+      effectiveAt: time(6),
+      effectiveAtBasis: 'production_verified_no_later_than',
+    })
+    const repository = repositoryFor([historical])
+    const listed = await listPublicAnnouncements({ cursor: null, limit: 20 }, repository)
+    assert.deepEqual(listed.announcements[0].effectiveAt, time(6))
+    assert.equal('effectiveAtBasis' in listed.announcements[0], false)
+    const detail = await getPublicAnnouncement(historical._id.toString(), repository)
+    assert.deepEqual(detail.effectiveAt, time(6))
+    assert.equal('effectiveAtBasis' in detail, false)
   })
 
   it('uses an explicit list DTO with Important Update and category-safe maintenance', async () => {
@@ -229,6 +257,8 @@ describe('P10-I3 Announcement public service', () => {
 
   it('returns minimal Withdrawn and Removed tombstones without protected content', async () => {
     const sensitive = {
+      effectiveAt: time(6),
+      effectiveAtBasis: 'production_verified_no_later_than',
       importantUpdate: { at: time(9), note: 'Secret update.' },
       maintenance: {
         status: 'scheduled',

@@ -1,5 +1,4 @@
-import type { QueryFilter } from 'mongoose'
-import { Announcement, type IAnnouncement } from '../models/announcementModel.js'
+import { Announcement } from '../models/announcementModel.js'
 import type {
   AnnouncementCategory,
   AnnouncementGovernanceStatus,
@@ -25,6 +24,8 @@ type AnnouncementListRecord = Readonly<{
   priority: AnnouncementPriority
   title: string
   publishedAt: Date
+  effectiveAt?: Date
+  orderingAt: Date
   importantUpdate?: ImportantUpdateValue | null
   maintenance?: AnnouncementMaintenanceData | null
 }>
@@ -40,7 +41,7 @@ type AnnouncementAvailableRecord = AnnouncementListRecord &
 
 export type AnnouncementPublicRepository = Readonly<{
   list(
-    filter: QueryFilter<IAnnouncement>,
+    filter: Readonly<Record<string, unknown>>,
     sort: typeof announcementPublicSort,
     limit: number,
   ): Promise<AnnouncementListRecord[]>
@@ -48,17 +49,30 @@ export type AnnouncementPublicRepository = Readonly<{
   findAvailableById(id: string): Promise<AnnouncementAvailableRecord | null>
 }>
 
-const LIST_FIELDS = 'category priority title publishedAt importantUpdate maintenance'
+const LIST_FIELDS = 'category priority title publishedAt effectiveAt importantUpdate maintenance'
 const STATE_FIELDS = 'publicationStatus governanceStatus'
 const AVAILABLE_FIELDS = `${LIST_FIELDS} body`
 
 const mongooseAnnouncementPublicRepository: AnnouncementPublicRepository = {
   async list(filter, sort, limit) {
-    return (await Announcement.find(filter)
-      .select(LIST_FIELDS)
-      .sort(sort)
-      .limit(limit)
-      .lean()) as unknown as AnnouncementListRecord[]
+    return Announcement.aggregate<AnnouncementListRecord>([
+      { $addFields: { orderingAt: { $ifNull: ['$effectiveAt', '$publishedAt'] } } },
+      { $match: filter },
+      { $sort: sort },
+      { $limit: limit },
+      {
+        $project: {
+          category: 1,
+          priority: 1,
+          title: 1,
+          publishedAt: 1,
+          effectiveAt: 1,
+          orderingAt: 1,
+          importantUpdate: 1,
+          maintenance: 1,
+        },
+      },
+    ])
   },
   async findStateById(id) {
     return (await Announcement.findById(id)
@@ -98,6 +112,7 @@ const shapeSharedPublicFields = (announcement: AnnouncementListRecord) => ({
   priority: announcement.priority,
   title: announcement.title,
   publishedAt: announcement.publishedAt,
+  ...(announcement.effectiveAt ? { effectiveAt: announcement.effectiveAt } : {}),
   ...(announcement.importantUpdate
     ? { importantUpdate: shapeImportantUpdate(announcement.importantUpdate) }
     : {}),
@@ -114,7 +129,7 @@ export const listPublicAnnouncements = async (
   }>,
   repository: AnnouncementPublicRepository = mongooseAnnouncementPublicRepository,
 ) => {
-  const filter: QueryFilter<IAnnouncement> = {
+  const filter = {
     publicationStatus: 'published',
     governanceStatus: 'normal',
     ...(input.category ? { category: input.category } : {}),
@@ -130,7 +145,7 @@ export const listPublicAnnouncements = async (
     nextCursor:
       hasMore && last
         ? encodeAnnouncementPublicCursor({
-            publishedAt: last.publishedAt,
+            orderingAt: last.orderingAt,
             id: last._id.toString(),
           })
         : null,

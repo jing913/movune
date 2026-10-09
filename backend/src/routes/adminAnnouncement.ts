@@ -5,6 +5,7 @@ import {
   deleteAnnouncementDraftController,
   editPublishedAnnouncementController,
   getAdminAnnouncementController,
+  historicalPublishAnnouncementController,
   listAdminAnnouncementsController,
   publishAnnouncementController,
   removeAnnouncementController,
@@ -23,6 +24,11 @@ router.post('/', requireAuth, createAnnouncementDraftController)
 router.patch('/:announcementId', requireAuth, saveAnnouncementDraftController)
 router.delete('/:announcementId', requireAuth, deleteAnnouncementDraftController)
 router.post('/:announcementId/publish', requireAuth, publishAnnouncementController)
+router.post(
+  '/:announcementId/historical-publish',
+  requireAuth,
+  historicalPublishAnnouncementController,
+)
 router.patch('/:announcementId/published-content', requireAuth, editPublishedAnnouncementController)
 router.post('/:announcementId/withdraw', requireAuth, withdrawAnnouncementController)
 router.post('/:announcementId/restore', requireAuth, restoreAnnouncementController)

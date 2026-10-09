@@ -39,6 +39,12 @@ describe('P10-I4B Announcement admin policy', () => {
       { category: 'feature_update', priority: 'normal', revision: 0 },
       { category: 'feature_update', priority: 'normal', publicationStatus: 'draft' },
       { category: 'feature_update', priority: 'normal', governanceStatus: 'normal' },
+      { category: 'feature_update', priority: 'normal', effectiveAt: '2026-10-06' },
+      {
+        category: 'feature_update',
+        priority: 'normal',
+        effectiveAtBasis: 'production_verified_no_later_than',
+      },
       { category: 'feature_update', priority: 'normal', unknown: true },
       null,
       [],
@@ -67,6 +73,13 @@ describe('P10-I4B Announcement admin policy', () => {
       { expectedRevision: 1.5, category: 'feature_update', priority: 'normal' },
       { expectedRevision: '1', category: 'feature_update', priority: 'normal' },
       { expectedRevision: 0, category: 'feature_update', priority: 'normal', revision: 0 },
+      {
+        expectedRevision: 0,
+        category: 'feature_update',
+        priority: 'normal',
+        effectiveAt: '2026-10-06',
+        effectiveAtBasis: 'production_verified_no_later_than',
+      },
       { expectedRevision: 0, category: 'feature_update', priority: 'normal', extra: true },
     ]) {
       assertProblem(() => parseAnnouncementSaveRequest(invalid), 'ANNOUNCEMENT_REQUEST_INVALID')

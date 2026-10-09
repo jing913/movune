@@ -10,6 +10,7 @@ import { errorHandler } from '../dist/middlewares/errorHandler.js'
 import { encodeAnnouncementPublicCursor } from '../dist/utils/announcementPublicPolicy.js'
 
 const originalFind = Announcement.find
+const originalAggregate = Announcement.aggregate
 const originalFindById = Announcement.findById
 const originalFindOne = Announcement.findOne
 const servers = new Set()
@@ -38,11 +39,12 @@ const matches = (candidate, filter) => {
   if (candidate.governanceStatus !== filter.governanceStatus) return false
   if (filter.category && candidate.category !== filter.category) return false
   if (!filter.$or) return true
-  const boundaryTime = filter.$or[0].publishedAt.$lt
+  const boundaryTime = filter.$or[0].orderingAt.$lt
   const boundaryId = filter.$or[1]._id.$lt.toString()
+  const candidateOrderingAt = candidate.effectiveAt ?? candidate.publishedAt
   return (
-    candidate.publishedAt < boundaryTime ||
-    (candidate.publishedAt.valueOf() === boundaryTime.valueOf() &&
+    candidateOrderingAt < boundaryTime ||
+    (candidateOrderingAt.valueOf() === boundaryTime.valueOf() &&
       candidate._id.toString() < boundaryId)
   )
 }
@@ -64,6 +66,22 @@ const query = (value) => ({
 })
 
 const installRecords = (records) => {
+  Announcement.aggregate = async (pipeline) => {
+    const filter = pipeline.find((stage) => '$match' in stage).$match
+    const limit = pipeline.find((stage) => '$limit' in stage).$limit
+    return records
+      .map((candidate) => ({
+        ...candidate,
+        orderingAt: candidate.effectiveAt ?? candidate.publishedAt,
+      }))
+      .filter((candidate) => matches(candidate, filter))
+      .sort(
+        (left, right) =>
+          right.orderingAt.valueOf() - left.orderingAt.valueOf() ||
+          right._id.toString().localeCompare(left._id.toString()),
+      )
+      .slice(0, limit)
+  }
   Announcement.find = (filter) =>
     query(
       records
@@ -122,6 +140,7 @@ const request = (server, path, headers = {}) =>
 
 afterEach(async () => {
   Announcement.find = originalFind
+  Announcement.aggregate = originalAggregate
   Announcement.findById = originalFindById
   Announcement.findOne = originalFindOne
   await Promise.all(
@@ -165,7 +184,7 @@ describe('P10-I3 public Announcement API', () => {
     installRecords([])
     const server = await startServer()
     const cursor = encodeAnnouncementPublicCursor({
-      publishedAt: time(10),
+      orderingAt: time(10),
       id: id('11').toString(),
     })
     for (const [path, code] of [

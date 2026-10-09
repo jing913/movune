@@ -6,6 +6,7 @@ import {
   ANNOUNCEMENT_PUBLICATION_STATUSES,
 } from './announcementLifecyclePolicy.js'
 import { isAnnouncementRichText } from '../utils/announcementRichText.js'
+import { ANNOUNCEMENT_EFFECTIVE_AT_BASES } from '../utils/announcementHistoricalPolicy.js'
 
 export type AnnouncementValidationIssue = Readonly<{
   field: string
@@ -25,6 +26,8 @@ export type AnnouncementValidationInput = Readonly<{
   body?: unknown
   publicationStatus?: unknown
   governanceStatus?: unknown
+  effectiveAt?: unknown
+  effectiveAtBasis?: unknown
   maintenance?: unknown
   revision?: unknown
 }>
@@ -202,6 +205,27 @@ const validateCommon = (input: AnnouncementValidationInput) => {
     ANNOUNCEMENT_PRIORITIES as readonly string[],
   )
   validateOptionalRootState(issues, input)
+  const hasEffectiveAt = input.effectiveAt !== undefined
+  const hasEffectiveAtBasis = input.effectiveAtBasis !== undefined
+  if (hasEffectiveAt !== hasEffectiveAtBasis) {
+    issues.push(
+      issue(
+        hasEffectiveAt ? 'effectiveAtBasis' : 'effectiveAt',
+        'required',
+        'effectiveAt and effectiveAtBasis must be provided together',
+      ),
+    )
+  }
+  if (hasEffectiveAt && !isValidDate(input.effectiveAt)) {
+    issues.push(issue('effectiveAt', 'invalid', 'effectiveAt must be a valid Date'))
+  }
+  if (
+    hasEffectiveAtBasis &&
+    (typeof input.effectiveAtBasis !== 'string' ||
+      !(ANNOUNCEMENT_EFFECTIVE_AT_BASES as readonly string[]).includes(input.effectiveAtBasis))
+  ) {
+    issues.push(issue('effectiveAtBasis', 'invalid', 'effectiveAtBasis is invalid'))
+  }
   return issues
 }
 
@@ -220,6 +244,15 @@ export const validateAnnouncementDraft = (
   }
   if (input.governanceStatus !== 'normal') {
     issues.push(issue('governanceStatus', 'invalid', 'Draft governanceStatus must be normal'))
+  }
+  if (input.effectiveAt !== undefined || input.effectiveAtBasis !== undefined) {
+    issues.push(
+      issue(
+        'effectiveAt',
+        'not_allowed',
+        'Historical metadata cannot be established through the Draft API',
+      ),
+    )
   }
   if (input.title !== undefined && !isNonemptyTrimmedText(input.title)) {
     issues.push(issue('title', 'invalid', 'title must be non-empty and trimmed'))

@@ -161,6 +161,19 @@ describe('P10-I4A Draft validation boundary', () => {
     }
   })
 
+  it('keeps historical metadata out of ordinary Draft validation', () => {
+    const effectiveAt = new Date('2026-10-05T16:00:00.000Z')
+    for (const historical of [
+      { effectiveAt },
+      { effectiveAtBasis: 'production_verified_no_later_than' },
+      { effectiveAt, effectiveAtBasis: 'production_verified_no_later_than' },
+    ]) {
+      const validation = validateAnnouncementDraft(draft(historical))
+      assert.equal(validation.valid, false)
+      assert.ok(validation.issues.some(({ code }) => code === 'not_allowed'))
+    }
+  })
+
   it('requires a non-negative integer revision in whole-state validation', () => {
     const withoutRevision = {
       category: 'platform_announcement',
@@ -192,6 +205,22 @@ describe('P10-I4A Draft validation boundary', () => {
 })
 
 describe('P10-I4A Publication validation boundary', () => {
+  it('accepts only absent or fully valid historical metadata on a publication', () => {
+    const effectiveAt = new Date('2026-10-05T16:00:00.000Z')
+    assert.equal(
+      validateAnnouncementForPublication(
+        complete({ effectiveAt, effectiveAtBasis: 'production_verified_no_later_than' }),
+      ).valid,
+      true,
+    )
+    for (const historical of [
+      { effectiveAt },
+      { effectiveAtBasis: 'production_verified_no_later_than' },
+      { effectiveAt, effectiveAtBasis: 'exact_release_time' },
+    ]) {
+      assert.equal(validateAnnouncementForPublication(complete(historical)).valid, false)
+    }
+  })
   it('requires title and body', () => {
     const missingTitle = validateAnnouncementForPublication(complete({ title: undefined }))
     const missingBody = validateAnnouncementForPublication(complete({ body: undefined }))

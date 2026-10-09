@@ -27,6 +27,7 @@ import {
   announcementGovernanceStateConflict,
   announcementGovernanceTransactionFailed,
   deriveAnnouncementGovernanceChanges,
+  type AnnouncementHistoricalPublishRequest,
   type AnnouncementMaintenanceTransitionRequest,
   type AnnouncementPublishedEditRequest,
   type AnnouncementRemovalRequest,
@@ -35,7 +36,7 @@ import {
 import { ApiProblem } from '../utils/messagingPolicy.js'
 
 const ADMIN_FIELDS =
-  'category priority title body publicationStatus governanceStatus publishedAt importantUpdate maintenance revision createdAt updatedAt'
+  'category priority title body publicationStatus governanceStatus publishedAt effectiveAt effectiveAtBasis importantUpdate maintenance revision createdAt updatedAt'
 
 export type AnnouncementGovernanceRepository = Readonly<{
   findById(id: string, session: ClientSession): Promise<AnnouncementAdminRecord | null>
@@ -96,6 +97,12 @@ const isPublishedNormal = (record: AnnouncementAdminRecord) =>
 const isDraftNormal = (record: AnnouncementAdminRecord) =>
   record.publicationStatus === 'draft' && record.governanceStatus === 'normal'
 
+const hasHistoricalMetadata = (record: AnnouncementAdminRecord) =>
+  record.effectiveAt !== undefined || record.effectiveAtBasis !== undefined
+
+const isDraftNormalWithoutHistoricalMetadata = (record: AnnouncementAdminRecord) =>
+  isDraftNormal(record) && !hasHistoricalMetadata(record)
+
 const isWithdrawnNormal = (record: AnnouncementAdminRecord) =>
   record.publicationStatus === 'withdrawn' && record.governanceStatus === 'normal'
 
@@ -155,7 +162,9 @@ export const createAnnouncementGovernanceService = (
       return transact(async (session) => {
         const current = await repository.findById(id, session)
         if (!current) throw announcementGovernanceNotFound()
-        if (!isDraftNormal(current)) throw announcementGovernanceStateConflict()
+        if (!isDraftNormalWithoutHistoricalMetadata(current)) {
+          throw announcementGovernanceStateConflict()
+        }
         if (!canTransitionAnnouncementPublication('draft', 'published', current.governanceStatus)) {
           throw announcementGovernanceStateConflict()
         }
@@ -167,6 +176,8 @@ export const createAnnouncementGovernanceService = (
             revision: input.expectedRevision,
             publicationStatus: 'draft',
             governanceStatus: 'normal',
+            effectiveAt: { $exists: false },
+            effectiveAtBasis: { $exists: false },
           },
           {
             $set: { publicationStatus: 'published', publishedAt: occurredAt },
@@ -180,10 +191,64 @@ export const createAnnouncementGovernanceService = (
             input.expectedRevision,
             session,
             repository,
-            isDraftNormal,
+            isDraftNormalWithoutHistoricalMetadata,
           )
         }
         await repository.createEvent(eventWrite(id, actorUserId, 'publish', occurredAt), session)
+        return shapeAnnouncementAdminDetail(updated)
+      })
+    },
+
+    historicalPublish(
+      id: string,
+      actorUserId: string,
+      input: AnnouncementHistoricalPublishRequest,
+    ) {
+      return transact(async (session) => {
+        const current = await repository.findById(id, session)
+        if (!current) throw announcementGovernanceNotFound()
+        if (!isDraftNormalWithoutHistoricalMetadata(current)) {
+          throw announcementGovernanceStateConflict()
+        }
+        if (!canTransitionAnnouncementPublication('draft', 'published', current.governanceStatus)) {
+          throw announcementGovernanceStateConflict()
+        }
+        assertPublicationValid(current)
+
+        const occurredAt = now()
+        const updated = await repository.mutate(
+          {
+            _id: id,
+            revision: input.expectedRevision,
+            publicationStatus: 'draft',
+            governanceStatus: 'normal',
+            effectiveAt: { $exists: false },
+            effectiveAtBasis: { $exists: false },
+          },
+          {
+            $set: {
+              publicationStatus: 'published',
+              publishedAt: occurredAt,
+              effectiveAt: input.effectiveAt,
+              effectiveAtBasis: input.effectiveAtBasis,
+            },
+            $inc: { revision: 1 },
+          },
+          session,
+        )
+        if (!updated) {
+          return classifyFailedMutation(
+            id,
+            input.expectedRevision,
+            session,
+            repository,
+            isDraftNormalWithoutHistoricalMetadata,
+          )
+        }
+        await repository.createEvent(
+          eventWrite(id, actorUserId, 'historical_publish', occurredAt),
+          session,
+        )
         return shapeAnnouncementAdminDetail(updated)
       })
     },
@@ -203,6 +268,10 @@ export const createAnnouncementGovernanceService = (
           publicationStatus: 'published',
           governanceStatus: 'normal',
           revision: input.expectedRevision,
+          ...(current.effectiveAt !== undefined ? { effectiveAt: current.effectiveAt } : {}),
+          ...(current.effectiveAtBasis !== undefined
+            ? { effectiveAtBasis: current.effectiveAtBasis }
+            : {}),
         }
         assertPublicationValid(candidate)
 
@@ -449,6 +518,7 @@ export const createAnnouncementGovernanceService = (
 const announcementGovernanceService = createAnnouncementGovernanceService()
 
 export const publishAnnouncement = announcementGovernanceService.publish
+export const historicalPublishAnnouncement = announcementGovernanceService.historicalPublish
 export const editPublishedAnnouncement = announcementGovernanceService.editPublished
 export const withdrawAnnouncement = announcementGovernanceService.withdraw
 export const restoreAnnouncement = announcementGovernanceService.restore

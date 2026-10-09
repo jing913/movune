@@ -16,6 +16,10 @@ import {
   isAnnouncementRichText,
   type AnnouncementRichTextDocument,
 } from '../utils/announcementRichText.js'
+import {
+  ANNOUNCEMENT_EFFECTIVE_AT_BASES,
+  type AnnouncementEffectiveAtBasis,
+} from '../utils/announcementHistoricalPolicy.js'
 
 export type AnnouncementImportantUpdate = Readonly<{
   at: Date
@@ -39,6 +43,8 @@ export interface IAnnouncement {
   publicationStatus: AnnouncementPublicationStatus
   governanceStatus: AnnouncementGovernanceStatus
   publishedAt?: Date
+  effectiveAt?: Date
+  effectiveAtBasis?: AnnouncementEffectiveAtBasis
   importantUpdate?: AnnouncementImportantUpdate
   maintenance?: AnnouncementDraftMaintenanceData | AnnouncementMaintenanceData
   revision: number
@@ -122,6 +128,19 @@ const announcementSchema = new Schema<IAnnouncement>(
       required: true,
     },
     publishedAt: { type: Date },
+    effectiveAt: {
+      type: Date,
+      required: function (this: IAnnouncement) {
+        return this.effectiveAtBasis !== undefined
+      },
+    },
+    effectiveAtBasis: {
+      type: String,
+      enum: ANNOUNCEMENT_EFFECTIVE_AT_BASES,
+      required: function (this: IAnnouncement) {
+        return this.effectiveAt !== undefined
+      },
+    },
     importantUpdate: { type: importantUpdateSchema },
     maintenance: {
       type: maintenanceSchema,

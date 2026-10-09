@@ -15,6 +15,7 @@ import {
   type AnnouncementValidationIssue,
 } from '../policies/announcementValidationPolicy.js'
 import type { AnnouncementRichTextDocument } from '../utils/announcementRichText.js'
+import type { AnnouncementEffectiveAtBasis } from '../utils/announcementHistoricalPolicy.js'
 import {
   announcementAdminSort,
   buildAnnouncementAdminCursorFilter,
@@ -37,6 +38,8 @@ export type AnnouncementAdminRecord = Readonly<{
   publicationStatus: AnnouncementPublicationStatus
   governanceStatus: AnnouncementGovernanceStatus
   publishedAt?: Date
+  effectiveAt?: Date
+  effectiveAtBasis?: AnnouncementEffectiveAtBasis
   importantUpdate?: ImportantUpdateValue | null
   maintenance?: AnnouncementDraftMaintenanceData | null
   revision: number
@@ -66,7 +69,7 @@ export type AnnouncementDraftAdminRepository = Readonly<{
 }>
 
 const ADMIN_FIELDS =
-  'category priority title body publicationStatus governanceStatus publishedAt importantUpdate maintenance revision createdAt updatedAt'
+  'category priority title body publicationStatus governanceStatus publishedAt effectiveAt effectiveAtBasis importantUpdate maintenance revision createdAt updatedAt'
 const STATE_FIELDS = 'publicationStatus governanceStatus revision'
 
 const mongooseRepository: AnnouncementDraftAdminRepository = {
@@ -124,6 +127,8 @@ const shapeShared = (record: AnnouncementAdminRecord) => ({
   publicationStatus: record.publicationStatus,
   governanceStatus: record.governanceStatus,
   ...(record.publishedAt !== undefined ? { publishedAt: record.publishedAt } : {}),
+  ...(record.effectiveAt !== undefined ? { effectiveAt: record.effectiveAt } : {}),
+  ...(record.effectiveAtBasis !== undefined ? { effectiveAtBasis: record.effectiveAtBasis } : {}),
   revision: record.revision,
   createdAt: record.createdAt,
   updatedAt: record.updatedAt,

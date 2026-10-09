@@ -13,6 +13,7 @@ import {
 } from '../services/announcementDraftAdminService.js'
 import {
   editPublishedAnnouncement,
+  historicalPublishAnnouncement,
   publishAnnouncement,
   removeAnnouncement,
   restoreAnnouncement,
@@ -28,6 +29,7 @@ import {
   parseAnnouncementSaveRequest,
 } from '../utils/announcementAdminPolicy.js'
 import {
+  parseAnnouncementHistoricalPublishRequest,
   parseAnnouncementMaintenanceTransitionRequest,
   parseAnnouncementPublishedEditRequest,
   parseAnnouncementRemovalRequest,
@@ -104,6 +106,18 @@ export const publishAnnouncementController = handler<Request<AnnouncementParams>
       parseAnnouncementAdminId(req.params.announcementId),
       actorId(req),
       parseAnnouncementRevisionRequest(req.body),
+    )
+    res.status(StatusCodes.OK).json({ announcement })
+  },
+)
+
+export const historicalPublishAnnouncementController = handler<Request<AnnouncementParams>>(
+  async (req, res) => {
+    authorize(req, 'announcement:historical_backfill')
+    const announcement = await historicalPublishAnnouncement(
+      parseAnnouncementAdminId(req.params.announcementId),
+      actorId(req),
+      parseAnnouncementHistoricalPublishRequest(req.body),
     )
     res.status(StatusCodes.OK).json({ announcement })
   },
