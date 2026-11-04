@@ -37,7 +37,10 @@ if (!dbUrl) {
   throw new Error('DB_URL is required')
 }
 
-await connect(dbUrl)
+await connect(dbUrl, {
+  autoIndex: false,
+  autoCreate: false,
+})
 
 const jwtSecret = process.env.JWT_SECRET
 
