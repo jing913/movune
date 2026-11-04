@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import type { RouteRecordRaw } from 'vue-router'
 import HomeView from '@/views/HomeView.vue'
 import ExploreMoviesView from '@/views/ExploreMoviesView.vue'
 import MovieDetailView from '@/views/MovieDetailView.vue'
@@ -16,17 +17,27 @@ import AnnouncementAdminListView from '@/views/admin/AnnouncementAdminListView.v
 import AnnouncementAdminEditorView from '@/views/admin/AnnouncementAdminEditorView.vue'
 import MemberAdminListView from '@/views/admin/MemberAdminListView.vue'
 import MemberAdminDetailView from '@/views/admin/MemberAdminDetailView.vue'
+import AdminLayout from '@/layouts/AdminLayout.vue'
 import { useUserStore } from '@/stores/user'
+import type { User } from '@/services/users'
+
+export type AdminCapability = keyof User['capabilities']
+
+export function firstAuthorizedAdminRoute(capabilities?: User['capabilities']) {
+  if (capabilities?.viewMembers === true) return { name: 'member-admin-list' }
+  if (capabilities?.manageAnnouncements === true) return { name: 'announcement-admin-list' }
+  return { path: '/' }
+}
 
 declare module 'vue-router' {
   interface RouteMeta {
+    layout?: 'admin'
     requiresAuth?: boolean
-    requiresAnnouncementManagement?: boolean
-    requiresMemberRead?: boolean
+    requiredAdminCapability?: AdminCapability
   }
 }
 
-const routes = [
+const routes: RouteRecordRaw[] = [
   {
     path: '/',
     component: HomeView,
@@ -108,34 +119,42 @@ const routes = [
     component: AnnouncementDetailView,
   },
   {
-    path: '/admin/members',
-    name: 'member-admin-list',
-    component: MemberAdminListView,
-    meta: { requiresAuth: true, requiresMemberRead: true },
-  },
-  {
-    path: '/admin/members/:memberId',
-    name: 'member-admin-detail',
-    component: MemberAdminDetailView,
-    meta: { requiresAuth: true, requiresMemberRead: true },
-  },
-  {
-    path: '/admin/announcements',
-    name: 'announcement-admin-list',
-    component: AnnouncementAdminListView,
-    meta: { requiresAuth: true, requiresAnnouncementManagement: true },
-  },
-  {
-    path: '/admin/announcements/new',
-    name: 'announcement-admin-new',
-    component: AnnouncementAdminEditorView,
-    meta: { requiresAuth: true, requiresAnnouncementManagement: true },
-  },
-  {
-    path: '/admin/announcements/:announcementId',
-    name: 'announcement-admin-editor',
-    component: AnnouncementAdminEditorView,
-    meta: { requiresAuth: true, requiresAnnouncementManagement: true },
+    path: '/admin',
+    name: 'admin-home',
+    component: AdminLayout,
+    meta: { layout: 'admin', requiresAuth: true },
+    children: [
+      {
+        path: 'members',
+        name: 'member-admin-list',
+        component: MemberAdminListView,
+        meta: { requiresAuth: true, requiredAdminCapability: 'viewMembers' },
+      },
+      {
+        path: 'members/:memberId',
+        name: 'member-admin-detail',
+        component: MemberAdminDetailView,
+        meta: { requiresAuth: true, requiredAdminCapability: 'viewMembers' },
+      },
+      {
+        path: 'announcements',
+        name: 'announcement-admin-list',
+        component: AnnouncementAdminListView,
+        meta: { requiresAuth: true, requiredAdminCapability: 'manageAnnouncements' },
+      },
+      {
+        path: 'announcements/new',
+        name: 'announcement-admin-new',
+        component: AnnouncementAdminEditorView,
+        meta: { requiresAuth: true, requiredAdminCapability: 'manageAnnouncements' },
+      },
+      {
+        path: 'announcements/:announcementId',
+        name: 'announcement-admin-editor',
+        component: AnnouncementAdminEditorView,
+        meta: { requiresAuth: true, requiredAdminCapability: 'manageAnnouncements' },
+      },
+    ],
   },
 ]
 
@@ -169,15 +188,13 @@ router.beforeEach(async (to) => {
     }
   }
 
-  if (
-    to.meta.requiresAnnouncementManagement &&
-    userStore.currentUser?.capabilities.manageAnnouncements !== true
-  ) {
-    return { path: '/' }
+  if (to.name === 'admin-home') {
+    return firstAuthorizedAdminRoute(userStore.currentUser?.capabilities)
   }
 
-  if (to.meta.requiresMemberRead && userStore.currentUser?.capabilities.viewMembers !== true) {
-    return { path: '/' }
+  const requiredCapability = to.meta.requiredAdminCapability
+  if (requiredCapability && userStore.currentUser?.capabilities[requiredCapability] !== true) {
+    return { name: 'admin-home' }
   }
 })
 

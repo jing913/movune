@@ -473,43 +473,43 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="page-shell pb-20 pt-8 sm:pt-12">
+  <section>
     <RouterLink
       :to="{ name: 'announcement-admin-list' }"
       class="rounded-sm text-sm text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-focus-ring"
       >← 返回公告管理</RouterLink
     >
-    <div v-if="loading" class="mt-8 rounded-xl border border-border p-12 text-center" role="status">
+    <div v-if="loading" class="mt-6 rounded-xl border border-border p-10 text-center" role="status">
       公告載入中…
     </div>
     <section
       v-else-if="loadState === 'not-found'"
-      class="mt-8 rounded-xl border border-border p-12 text-center"
+      class="mt-6 rounded-xl border border-border p-8 text-center"
     >
-      <h1 class="text-3xl font-bold">找不到此公告</h1>
+      <h1 class="text-xl font-bold">找不到此公告</h1>
     </section>
     <section
       v-else-if="loadState === 'forbidden'"
-      class="mt-8 rounded-xl border border-destructive p-12 text-center"
+      class="mt-6 rounded-xl border border-destructive p-8 text-center"
       role="alert"
     >
-      <h1 class="text-3xl font-bold">無權限查看此公告</h1>
+      <h1 class="text-xl font-bold">無權限查看此公告</h1>
       <RouterLink
         :to="{ name: 'announcement-admin-list' }"
-        class="mt-5 inline-flex min-h-11 items-center rounded-md border border-control px-4"
+        class="mt-5 inline-flex min-h-11 items-center rounded-lg border border-control px-4 font-semibold"
       >
         返回公告管理
       </RouterLink>
     </section>
     <section
       v-else-if="loadState === 'error'"
-      class="mt-8 rounded-xl border border-border p-12 text-center"
+      class="mt-6 rounded-xl border border-border p-8 text-center"
       role="alert"
     >
-      <h1 class="text-3xl font-bold">公告載入失敗</h1>
+      <h1 class="text-xl font-bold">公告載入失敗</h1>
       <button
         type="button"
-        class="mt-5 min-h-11 rounded-md border border-control px-4"
+        class="mt-5 min-h-11 rounded-lg border border-control px-4 font-semibold"
         @click="loadRecord"
       >
         重新載入
@@ -517,10 +517,7 @@ onBeforeUnmount(() => {
     </section>
     <template v-else>
       <header class="mt-6">
-        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-accent-caramel">
-          Announcement Admin
-        </p>
-        <h1 class="mt-2 text-3xl font-bold sm:text-4xl">
+        <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">
           {{ isNew ? '建立公告' : form.title || '未命名草稿' }}
         </h1>
         <p v-if="record" class="mt-2 text-sm text-muted-foreground">
@@ -536,7 +533,7 @@ onBeforeUnmount(() => {
         <button
           v-if="conflict"
           type="button"
-          class="mt-3 min-h-11 rounded-md border border-destructive px-4 font-semibold"
+          class="mt-3 min-h-11 rounded-lg border border-destructive px-4 font-semibold"
           @click="reloadLatest"
         >
           重新載入最新版本
@@ -555,31 +552,31 @@ onBeforeUnmount(() => {
 
       <fieldset
         v-if="isNew"
-        class="mt-8 grid gap-5 rounded-xl border border-border bg-card p-5 sm:grid-cols-2 sm:p-6"
+        class="mt-6 grid gap-4 rounded-xl border border-border bg-card p-4 shadow-sm sm:grid-cols-2"
         :disabled="busy"
       >
-        <legend class="px-2 text-lg font-bold">建立草稿</legend>
-        <label class="text-sm font-semibold"
+        <legend class="px-2 font-semibold">建立草稿</legend>
+        <label class="text-sm font-medium"
           >分類<select
             v-model="form.category"
-            class="mt-2 min-h-11 w-full rounded-md border border-control bg-background px-3"
+            class="mt-1.5 min-h-11 w-full rounded-lg border border-control bg-background px-3"
           >
             <option value="platform_announcement">平台公告</option>
             <option value="feature_update">功能更新</option>
             <option value="system_maintenance">系統維護</option>
           </select></label
         >
-        <label class="text-sm font-semibold"
+        <label class="text-sm font-medium"
           >優先層級<select
             v-model="form.priority"
-            class="mt-2 min-h-11 w-full rounded-md border border-control bg-background px-3"
+            class="mt-1.5 min-h-11 w-full rounded-lg border border-control bg-background px-3"
           >
             <option value="normal">一般</option>
             <option value="important">重要</option>
           </select></label
         >
       </fieldset>
-      <div v-else class="mt-8">
+      <div v-else class="mt-6">
         <AnnouncementAdminForm
           v-model="form"
           :errors="fieldErrors"
@@ -594,14 +591,14 @@ onBeforeUnmount(() => {
       </div>
 
       <section
-        class="sticky bottom-0 z-20 mt-8 rounded-xl border border-border bg-background/95 p-4 shadow-lg backdrop-blur sm:p-5"
+        class="sticky bottom-0 z-20 mt-6 rounded-xl border border-border bg-background/95 p-4 shadow-lg backdrop-blur"
         aria-label="公告操作"
       >
         <div class="flex flex-wrap items-center gap-3">
           <button
             v-if="isNew"
             type="button"
-            class="min-h-11 rounded-md bg-primary-cta px-5 font-semibold text-primary-foreground disabled:opacity-60"
+            class="min-h-11 rounded-lg bg-primary-cta px-4 font-semibold text-primary-foreground disabled:opacity-60"
             :disabled="busy"
             @click="createDraft"
           >
@@ -611,7 +608,7 @@ onBeforeUnmount(() => {
             <button
               v-if="record.publicationStatus === 'draft'"
               type="button"
-              class="min-h-11 rounded-md bg-primary-cta px-5 font-semibold text-primary-foreground"
+              class="min-h-11 rounded-lg bg-primary-cta px-4 font-semibold text-primary-foreground"
               :disabled="busy"
               @click="saveDraft"
             >
@@ -619,7 +616,7 @@ onBeforeUnmount(() => {
             </button>
             <button
               type="button"
-              class="min-h-11 rounded-md border border-control px-5 font-semibold"
+              class="min-h-11 rounded-lg border border-control px-4 font-semibold"
               :disabled="busy"
               @click="previewOpen = true"
             >
@@ -628,14 +625,14 @@ onBeforeUnmount(() => {
             <template v-if="record.publicationStatus === 'draft'"
               ><button
                 type="button"
-                class="min-h-11 rounded-md border border-accent-caramel px-5 font-semibold"
+                class="min-h-11 rounded-lg border border-accent-caramel px-4 font-semibold"
                 :disabled="busy || contentDirty"
                 @click="confirmAction = 'publish'"
               >
                 發布</button
               ><button
                 type="button"
-                class="min-h-11 rounded-md border border-destructive px-5 font-semibold text-destructive"
+                class="min-h-11 rounded-lg border border-destructive px-4 font-semibold text-destructive"
                 :disabled="busy"
                 @click="confirmAction = 'delete'"
               >
@@ -648,7 +645,7 @@ onBeforeUnmount(() => {
               ><input
                 v-if="importantUpdate"
                 v-model="updateNote"
-                class="min-h-11 min-w-0 flex-1 rounded-md border border-control bg-background px-3"
+                class="min-h-11 min-w-0 flex-1 rounded-lg border border-control bg-background px-3"
                 placeholder="更新說明（必填）"
                 aria-label="重要更新說明"
                 :aria-invalid="fieldErrors.updateNote ? 'true' : undefined"
@@ -663,14 +660,14 @@ onBeforeUnmount(() => {
                 >{{ fieldErrors.updateNote }}</span
               ><button
                 type="button"
-                class="min-h-11 rounded-md bg-primary-cta px-5 font-semibold text-primary-foreground"
+                class="min-h-11 rounded-lg bg-primary-cta px-4 font-semibold text-primary-foreground"
                 :disabled="busy"
                 @click="savePublished"
               >
                 {{ importantUpdate ? '發布重要更新' : '儲存一般修正' }}</button
               ><button
                 type="button"
-                class="min-h-11 rounded-md border border-control px-5 font-semibold"
+                class="min-h-11 rounded-lg border border-control px-4 font-semibold"
                 :disabled="busy || navigationDirty"
                 @click="confirmAction = 'withdraw'"
               >
@@ -680,7 +677,7 @@ onBeforeUnmount(() => {
             <button
               v-else-if="record.publicationStatus === 'withdrawn'"
               type="button"
-              class="min-h-11 rounded-md bg-primary-cta px-5 font-semibold text-primary-foreground"
+              class="min-h-11 rounded-lg bg-primary-cta px-4 font-semibold text-primary-foreground"
               :disabled="busy"
               @click="confirmAction = 'restore'"
             >
@@ -699,7 +696,7 @@ onBeforeUnmount(() => {
           <button
             v-if="record.maintenance?.status === 'scheduled'"
             type="button"
-            class="min-h-11 rounded-md border border-control px-4"
+            class="min-h-11 rounded-lg border border-control px-4"
             :disabled="busy || navigationDirty"
             @click="transitionMaintenance('in_progress')"
           >
@@ -709,7 +706,7 @@ onBeforeUnmount(() => {
             >實際完成時間<input
               v-model="completionTime"
               type="datetime-local"
-              class="mt-1 min-h-11 w-full rounded-md border border-control bg-background px-3"
+              class="mt-1 min-h-11 w-full rounded-lg border border-control bg-background px-3"
               :aria-invalid="fieldErrors.completionTime ? 'true' : undefined"
               :aria-describedby="
                 fieldErrors.completionTime ? 'announcement-completion-time-error' : undefined
@@ -724,7 +721,7 @@ onBeforeUnmount(() => {
           >
           <button
             type="button"
-            class="min-h-11 rounded-md border border-control px-4"
+            class="min-h-11 rounded-lg border border-control px-4"
             :disabled="busy || contentDirty"
             @click="transitionMaintenance('completed')"
           >
@@ -771,5 +768,5 @@ onBeforeUnmount(() => {
       "
       @confirm="resolveUnsaved(true)"
     />
-  </main>
+  </section>
 </template>

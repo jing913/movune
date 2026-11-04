@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import axios from 'axios'
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { ChevronLeft, ChevronRight, Search, Users } from '@lucide/vue'
 import {
   ADMIN_MEMBER_ROLES,
   ADMIN_MEMBER_STATUSES,
+  adminMemberDefaultLimit,
   listAdminMembers,
   type AdminMemberListItem,
   type AdminMemberListQuery,
@@ -15,16 +16,34 @@ import {
 
 const route = useRoute()
 const router = useRouter()
+const mobileMediaQuery = '(max-width: 767px)'
+const isMobileViewport = ref(
+  typeof window !== 'undefined' && window.matchMedia(mobileMediaQuery).matches,
+)
+const responsiveDefaultLimit = computed(() => adminMemberDefaultLimit(isMobileViewport.value))
 const members = ref<AdminMemberListItem[]>([])
-const pagination = ref({ page: 1, limit: 20, total: 0, totalPages: 0 })
+const pagination = ref<{ page: number; limit: number; total: number; totalPages: number }>({
+  page: 1,
+  limit: responsiveDefaultLimit.value,
+  total: 0,
+  totalPages: 0,
+})
 const isLoading = ref(false)
 const errorMessage = ref('')
 let requestVersion = 0
+let viewportMatcher: MediaQueryList | null = null
 
 const firstQueryValue = (value: unknown) => (typeof value === 'string' ? value : '')
 const positiveInteger = (value: unknown, fallback: number, maximum: number) => {
   const parsed = Number(firstQueryValue(value))
   return Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= maximum ? parsed : fallback
+}
+const explicitRouteLimit = () => {
+  const parsed = Number(firstQueryValue(route.query.limit))
+  return Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= 30 ? parsed : null
+}
+const handleViewportChange = (event: MediaQueryListEvent) => {
+  isMobileViewport.value = event.matches
 }
 
 const filters = reactive({ search: '', status: '', role: '', registeredFrom: '', registeredTo: '' })
@@ -34,7 +53,7 @@ function readRouteQuery(): AdminMemberListQuery {
   const role = firstQueryValue(route.query.role)
   const query: AdminMemberListQuery = {
     page: positiveInteger(route.query.page, 1, 10_000),
-    limit: positiveInteger(route.query.limit, 20, 30),
+    limit: positiveInteger(route.query.limit, responsiveDefaultLimit.value, 30),
   }
   const search = firstQueryValue(route.query.search).trim().slice(0, 50)
   const registeredFrom = firstQueryValue(route.query.registeredFrom)
@@ -57,7 +76,7 @@ function syncFiltersFromRoute(query: AdminMemberListQuery) {
   filters.registeredTo = query.registeredTo ?? ''
 }
 
-function queryForRoute(page = 1) {
+function queryForRoute(page = 1, limit = pagination.value.limit) {
   return {
     ...(filters.search.trim() ? { search: filters.search.trim().slice(0, 50) } : {}),
     ...(filters.status ? { status: filters.status } : {}),
@@ -65,7 +84,7 @@ function queryForRoute(page = 1) {
     ...(filters.registeredFrom ? { registeredFrom: filters.registeredFrom } : {}),
     ...(filters.registeredTo ? { registeredTo: filters.registeredTo } : {}),
     ...(page > 1 ? { page: String(page) } : {}),
-    ...(pagination.value.limit !== 20 ? { limit: String(pagination.value.limit) } : {}),
+    ...(limit !== responsiveDefaultLimit.value ? { limit: String(limit) } : {}),
   }
 }
 
@@ -83,7 +102,12 @@ async function loadMembers() {
   } catch (error) {
     if (version !== requestVersion) return
     members.value = []
-    pagination.value = { page: query.page ?? 1, limit: query.limit ?? 20, total: 0, totalPages: 0 }
+    pagination.value = {
+      page: query.page ?? 1,
+      limit: query.limit ?? responsiveDefaultLimit.value,
+      total: 0,
+      totalPages: 0,
+    }
     const status = axios.isAxiosError(error) ? error.response?.status : undefined
     errorMessage.value =
       status === 401
@@ -140,17 +164,32 @@ const initials = (member: AdminMemberListItem) =>
   (member.displayName || member.account).trim().charAt(0).toUpperCase()
 
 watch(() => route.fullPath, loadMembers, { immediate: true })
+watch(isMobileViewport, () => {
+  if (explicitRouteLimit() !== null) return
+  const target = {
+    name: 'member-admin-list',
+    query: queryForRoute(1, responsiveDefaultLimit.value),
+  }
+  if (router.resolve(target).fullPath === route.fullPath) void loadMembers()
+  else void router.replace(target)
+})
+onMounted(() => {
+  viewportMatcher = window.matchMedia(mobileMediaQuery)
+  isMobileViewport.value = viewportMatcher.matches
+  viewportMatcher.addEventListener('change', handleViewportChange)
+})
 onBeforeUnmount(() => {
   requestVersion += 1
+  viewportMatcher?.removeEventListener('change', handleViewportChange)
+  viewportMatcher = null
 })
 </script>
 
 <template>
-  <section class="page-shell py-8 sm:py-12" aria-labelledby="member-list-title">
+  <section class="text-slate-950" aria-labelledby="member-list-title">
     <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <p class="text-sm font-semibold text-amber-700">Member Management</p>
-        <h2 id="member-list-title" class="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">
+        <h2 id="member-list-title" class="text-2xl font-bold tracking-tight sm:text-3xl">
           會員管理
         </h2>
         <p class="mt-2 text-sm text-slate-600">唯讀檢視會員基本資料與目前有效帳號狀態。</p>
@@ -290,7 +329,7 @@ onBeforeUnmount(() => {
                       >{{ initials(member) }}</span
                     >
                     <div class="min-w-0">
-                      <p class="truncate font-semibold">{{ member.displayName }}</p>
+                      <p class="truncate font-semibold text-slate-950">{{ member.displayName }}</p>
                       <p class="truncate text-slate-500">@{{ member.account }}</p>
                     </div>
                   </div>
@@ -343,7 +382,7 @@ onBeforeUnmount(() => {
                 >{{ initials(member) }}</span
               >
               <div class="min-w-0 flex-1">
-                <h3 class="break-words whitespace-normal font-semibold">
+                <h3 class="break-words font-semibold whitespace-normal text-slate-950">
                   {{ member.displayName }}
                 </h3>
                 <p class="break-all text-sm text-slate-500">@{{ member.account }}</p>

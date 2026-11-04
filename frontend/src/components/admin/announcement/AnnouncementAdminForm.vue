@@ -62,17 +62,17 @@ const maintenanceActualCompletionTime = field('maintenanceActualCompletionTime')
 </script>
 
 <template>
-  <form class="space-y-7" @submit.prevent>
+  <form class="space-y-6" @submit.prevent>
     <fieldset
-      class="grid gap-5 rounded-xl border border-border bg-card p-5 sm:grid-cols-2 sm:p-6"
+      class="grid gap-4 rounded-xl border border-border bg-card p-4 shadow-sm sm:grid-cols-2"
       :disabled="disabled"
     >
-      <legend class="px-2 text-lg font-bold">基本資料</legend>
-      <label class="text-sm font-semibold"
+      <legend class="px-2 font-semibold">基本資料</legend>
+      <label class="text-sm font-medium"
         >分類
         <select
           v-model="category"
-          class="mt-2 min-h-11 w-full rounded-md border border-control bg-background px-3"
+          class="mt-1.5 min-h-11 w-full rounded-lg border border-control bg-background px-3"
           :aria-invalid="errors?.category ? 'true' : undefined"
           :aria-describedby="errors?.category ? 'announcement-category-error' : undefined"
         >
@@ -88,11 +88,11 @@ const maintenanceActualCompletionTime = field('maintenanceActualCompletionTime')
           >{{ errors.category }}</span
         >
       </label>
-      <label class="text-sm font-semibold"
+      <label class="text-sm font-medium"
         >優先層級
         <select
           v-model="priority"
-          class="mt-2 min-h-11 w-full rounded-md border border-control bg-background px-3"
+          class="mt-1.5 min-h-11 w-full rounded-lg border border-control bg-background px-3"
           :aria-invalid="errors?.priority ? 'true' : undefined"
           :aria-describedby="errors?.priority ? 'announcement-priority-error' : undefined"
         >
@@ -107,13 +107,13 @@ const maintenanceActualCompletionTime = field('maintenanceActualCompletionTime')
           >{{ errors.priority }}</span
         >
       </label>
-      <label class="text-sm font-semibold sm:col-span-2"
+      <label class="text-sm font-medium sm:col-span-2"
         >標題
         <input
           v-model="title"
           type="text"
           :required="requiresComplete"
-          class="mt-2 min-h-11 w-full rounded-md border border-control bg-background px-3"
+          class="mt-1.5 min-h-11 w-full rounded-lg border border-control bg-background px-3"
           :aria-invalid="errors?.title ? 'true' : undefined"
           :aria-describedby="errors?.title ? 'announcement-title-error' : undefined"
         />
@@ -129,13 +129,13 @@ const maintenanceActualCompletionTime = field('maintenanceActualCompletionTime')
 
     <fieldset
       v-if="category === 'system_maintenance'"
-      class="grid gap-5 rounded-xl border border-border bg-card p-5 sm:grid-cols-2 sm:p-6"
+      class="grid gap-4 rounded-xl border border-border bg-card p-4 shadow-sm sm:grid-cols-2"
       :disabled="disabled"
     >
-      <legend class="px-2 text-lg font-bold">維護資訊</legend>
+      <legend class="px-2 font-semibold">維護資訊</legend>
       <div>
-        <p class="text-sm font-semibold">維護狀態</p>
-        <p class="mt-2 min-h-11 rounded-md border border-border bg-secondary px-3 py-2">
+        <p class="text-sm font-medium">維護狀態</p>
+        <p class="mt-1.5 min-h-11 rounded-lg border border-border bg-secondary px-3 py-2">
           {{
             maintenanceStatus === 'scheduled'
               ? '預定維護'
@@ -146,12 +146,12 @@ const maintenanceActualCompletionTime = field('maintenanceActualCompletionTime')
         </p>
       </div>
       <span class="hidden sm:block"></span>
-      <label class="text-sm font-semibold"
+      <label class="text-sm font-medium"
         >開始時間<input
           v-model="maintenanceStartsAt"
           type="datetime-local"
           :required="requiresComplete"
-          class="mt-2 min-h-11 w-full rounded-md border border-control bg-background px-3"
+          class="mt-1.5 min-h-11 w-full rounded-lg border border-control bg-background px-3"
           :aria-invalid="errors?.maintenanceStartsAt ? 'true' : undefined"
           :aria-describedby="
             errors?.maintenanceStartsAt ? 'announcement-maintenance-start-error' : undefined
@@ -164,12 +164,12 @@ const maintenanceActualCompletionTime = field('maintenanceActualCompletionTime')
           >{{ errors.maintenanceStartsAt }}</span
         ></label
       >
-      <label class="text-sm font-semibold"
+      <label class="text-sm font-medium"
         >結束時間<input
           v-model="maintenanceEndsAt"
           type="datetime-local"
           :required="requiresComplete"
-          class="mt-2 min-h-11 w-full rounded-md border border-control bg-background px-3"
+          class="mt-1.5 min-h-11 w-full rounded-lg border border-control bg-background px-3"
           :aria-invalid="errors?.maintenanceEndsAt ? 'true' : undefined"
           :aria-describedby="
             errors?.maintenanceEndsAt ? 'announcement-maintenance-end-error' : undefined
@@ -182,12 +182,12 @@ const maintenanceActualCompletionTime = field('maintenanceActualCompletionTime')
           >{{ errors.maintenanceEndsAt }}</span
         ></label
       >
-      <label class="text-sm font-semibold sm:col-span-2"
+      <label class="text-sm font-medium sm:col-span-2"
         >影響範圍（以逗號分隔）<input
           v-model="affectedAreas"
           type="text"
           :required="requiresComplete"
-          class="mt-2 min-h-11 w-full rounded-md border border-control bg-background px-3"
+          class="mt-1.5 min-h-11 w-full rounded-lg border border-control bg-background px-3"
           :aria-invalid="errors?.affectedAreas ? 'true' : undefined"
           :aria-describedby="
             errors?.affectedAreas ? 'announcement-affected-areas-error' : undefined
@@ -200,12 +200,12 @@ const maintenanceActualCompletionTime = field('maintenanceActualCompletionTime')
           >{{ errors.affectedAreas }}</span
         ></label
       >
-      <label class="text-sm font-semibold sm:col-span-2"
+      <label class="text-sm font-medium sm:col-span-2"
         >預期影響<textarea
           v-model="expectedImpact"
           rows="3"
           :required="requiresComplete"
-          class="mt-2 w-full rounded-md border border-control bg-background px-3 py-2"
+          class="mt-1.5 w-full rounded-lg border border-control bg-background px-3 py-2"
           :aria-invalid="errors?.expectedImpact ? 'true' : undefined"
           :aria-describedby="
             errors?.expectedImpact ? 'announcement-expected-impact-error' : undefined
@@ -219,12 +219,12 @@ const maintenanceActualCompletionTime = field('maintenanceActualCompletionTime')
           >{{ errors.expectedImpact }}</span
         >
       </label>
-      <label v-if="maintenanceStatus === 'completed'" class="text-sm font-semibold sm:col-span-2"
+      <label v-if="maintenanceStatus === 'completed'" class="text-sm font-medium sm:col-span-2"
         >實際完成時間<input
           v-model="maintenanceActualCompletionTime"
           type="datetime-local"
           :disabled="lockMaintenanceLifecycle"
-          class="mt-2 min-h-11 w-full rounded-md border border-control bg-background px-3"
+          class="mt-1.5 min-h-11 w-full rounded-lg border border-control bg-background px-3"
           :aria-invalid="errors?.maintenanceActualCompletionTime ? 'true' : undefined"
           :aria-describedby="
             errors?.maintenanceActualCompletionTime
@@ -241,7 +241,7 @@ const maintenanceActualCompletionTime = field('maintenanceActualCompletionTime')
       >
     </fieldset>
 
-    <div class="rounded-xl border border-border bg-card p-5 sm:p-6">
+    <div class="rounded-xl border border-border bg-card p-4 shadow-sm">
       <AnnouncementBodyEditor v-model="body" :disabled="disabled" :error="errors?.body" />
     </div>
   </form>

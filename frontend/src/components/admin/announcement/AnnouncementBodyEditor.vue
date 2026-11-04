@@ -157,7 +157,7 @@ watch(
 
 <template>
   <fieldset class="space-y-4" :disabled="disabled">
-    <legend class="text-base font-bold">公告內容</legend>
+    <legend class="text-base font-semibold">公告內容</legend>
     <p class="text-sm text-muted-foreground">使用限定的段落、標題、清單、粗體與安全連結。</p>
     <div
       v-for="(block, index) in blocks"
@@ -169,7 +169,7 @@ watch(
           區塊類型
           <select
             v-model="block.kind"
-            class="ml-2 min-h-11 rounded-md border border-control bg-background px-3"
+            class="ml-2 min-h-11 rounded-lg border border-control bg-background px-3"
             @change="editBlock(block)"
           >
             <option value="paragraph">段落</option>
@@ -181,7 +181,7 @@ watch(
         </label>
         <button
           type="button"
-          class="ml-auto min-h-11 rounded-md border border-control px-3 text-sm disabled:opacity-50"
+          class="ml-auto min-h-11 rounded-lg border border-control px-3 text-sm disabled:opacity-50"
           :disabled="blocks.length === 1"
           @click="removeBlock(index)"
         >
@@ -195,7 +195,7 @@ watch(
         :id="`body-block-${block.id}`"
         v-model="block.text"
         rows="4"
-        class="mt-1 w-full rounded-md border border-control bg-background px-3 py-2"
+        class="mt-1 w-full rounded-lg border border-control bg-background px-3 py-2"
         :aria-invalid="error ? 'true' : undefined"
         :aria-describedby="error ? 'announcement-body-error' : undefined"
         @input="editBlock(block)"
@@ -212,7 +212,7 @@ watch(
           <input
             v-model="block.href"
             type="url"
-            class="mt-1 min-h-11 w-full rounded-md border border-control bg-background px-3"
+            class="mt-1 min-h-11 w-full rounded-lg border border-control bg-background px-3"
             :aria-invalid="block.href !== '' && !safeHref(block.href)"
             @input="editBlock(block)"
           />
@@ -230,7 +230,7 @@ watch(
     </p>
     <button
       type="button"
-      class="min-h-11 rounded-md border border-control px-4 font-semibold"
+      class="min-h-11 rounded-lg border border-control px-4 font-semibold"
       @click="addBlock"
     >
       新增內容區塊

@@ -22,6 +22,11 @@ import { ChevronDown, Search } from '@lucide/vue'
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+const hasAdminConsoleAccess = computed(
+  () =>
+    userStore.currentUser?.capabilities.viewMembers === true ||
+    userStore.currentUser?.capabilities.manageAnnouncements === true,
+)
 const emit = defineEmits<{
   'open-login': [opener?: HTMLElement]
 }>()
@@ -849,22 +854,13 @@ watch(isMenuOpen, (isOpen) => {
                   帳號設定
                 </RouterLink>
                 <RouterLink
-                  v-if="userStore.currentUser.capabilities.viewMembers === true"
-                  to="/admin/members"
-                  class="mt-1 block border-t border-border rounded-md px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-surface"
-                  role="menuitem"
-                  @click="closeUserMenu()"
-                >
-                  會員管理
-                </RouterLink>
-                <RouterLink
-                  v-if="userStore.currentUser.capabilities.manageAnnouncements === true"
-                  to="/admin/announcements"
+                  v-if="hasAdminConsoleAccess"
+                  to="/admin"
                   class="mt-1 block border-y border-border rounded-md px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-surface"
                   role="menuitem"
                   @click="closeUserMenu()"
                 >
-                  公告管理
+                  管理員後台
                 </RouterLink>
                 <button
                   type="button"
@@ -1039,47 +1035,21 @@ watch(isMenuOpen, (isOpen) => {
         </nav>
 
         <nav
-          v-if="
-            userStore.currentUser.capabilities.viewMembers === true ||
-            userStore.currentUser.capabilities.manageAnnouncements === true
-          "
+          v-if="hasAdminConsoleAccess"
           class="mt-3 border-y border-border py-3"
-          aria-label="管理功能"
+          aria-label="管理員後台"
         >
-          <RouterLink
-            v-if="userStore.currentUser.capabilities.viewMembers === true"
-            v-slot="{ href, navigate }"
-            to="/admin/members"
-            custom
-          >
+          <RouterLink v-slot="{ href, navigate }" to="/admin" custom>
             <a
               :href="href"
-              :aria-current="route.path.startsWith('/admin/members') ? 'page' : undefined"
+              :aria-current="route.path.startsWith('/admin') ? 'page' : undefined"
               :class="[
                 'block min-h-11 rounded-md px-4 py-3 font-medium text-foreground transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                route.path.startsWith('/admin/members') ? 'bg-surface-raised' : '',
+                route.path.startsWith('/admin') ? 'bg-surface-raised' : '',
               ]"
               @click="handleMobileAccountNavigation($event, navigate)"
             >
-              會員管理
-            </a>
-          </RouterLink>
-          <RouterLink
-            v-if="userStore.currentUser.capabilities.manageAnnouncements === true"
-            v-slot="{ href, navigate }"
-            to="/admin/announcements"
-            custom
-          >
-            <a
-              :href="href"
-              :aria-current="route.path.startsWith('/admin/announcements') ? 'page' : undefined"
-              :class="[
-                'block min-h-11 rounded-md px-4 py-3 font-medium text-foreground transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                route.path.startsWith('/admin/announcements') ? 'bg-surface-raised' : '',
-              ]"
-              @click="handleMobileAccountNavigation($event, navigate)"
-            >
-              公告管理
+              管理員後台
             </a>
           </RouterLink>
         </nav>

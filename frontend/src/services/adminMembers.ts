@@ -2,6 +2,10 @@ import api from '@/services/api'
 
 export const ADMIN_MEMBER_STATUSES = ['active', 'suspended', 'deactivated'] as const
 export const ADMIN_MEMBER_ROLES = ['user', 'admin'] as const
+export const ADMIN_MEMBER_DEFAULT_LIMITS = { desktop: 20, mobile: 5 } as const
+
+export const adminMemberDefaultLimit = (isMobile: boolean) =>
+  isMobile ? ADMIN_MEMBER_DEFAULT_LIMITS.mobile : ADMIN_MEMBER_DEFAULT_LIMITS.desktop
 
 export type AdminMemberStatus = (typeof ADMIN_MEMBER_STATUSES)[number]
 export type AdminMemberRole = (typeof ADMIN_MEMBER_ROLES)[number]

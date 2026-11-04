@@ -76,7 +76,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="page-shell py-8 sm:py-12" aria-labelledby="member-detail-title">
+  <section class="text-slate-950" aria-labelledby="member-detail-title">
     <RouterLink
       :to="returnTarget"
       class="inline-flex min-h-11 items-center gap-2 rounded-lg px-2 font-semibold text-slate-700 hover:bg-slate-200"

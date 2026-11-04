@@ -76,23 +76,20 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="page-shell pb-16 pt-8 sm:pt-12">
-    <header class="flex flex-wrap items-end justify-between gap-5">
+  <section>
+    <header class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-accent-caramel">
-          Administration
-        </p>
-        <h1 class="mt-2 text-3xl font-bold sm:text-4xl">公告管理</h1>
-        <p class="mt-3 text-muted-foreground">管理草稿、發布內容與公告生命週期。</p>
+        <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">公告管理</h1>
+        <p class="mt-2 text-sm text-slate-600">管理草稿、發布內容與公告生命週期。</p>
       </div>
       <RouterLink
         :to="{ name: 'announcement-admin-new' }"
-        class="inline-flex min-h-11 items-center rounded-md bg-primary-cta px-5 font-semibold text-primary-foreground"
+        class="inline-flex min-h-11 items-center justify-center rounded-lg bg-primary-cta px-4 font-semibold text-primary-foreground"
         >建立公告</RouterLink
       >
     </header>
 
-    <section class="mt-8" aria-labelledby="admin-list-heading">
+    <section class="mt-5" aria-labelledby="admin-list-heading">
       <h2 id="admin-list-heading" class="sr-only">公告管理列表</h2>
       <div v-if="loading" role="status" class="rounded-xl border border-border p-10 text-center">
         公告載入中…
@@ -105,7 +102,7 @@ onBeforeUnmount(() => {
         <p class="font-bold">{{ initialErrorMessage }}</p>
         <button
           type="button"
-          class="mt-4 min-h-11 rounded-md border border-control px-4"
+          class="mt-4 min-h-11 rounded-lg border border-control px-4 font-semibold"
           @click="loadInitial"
         >
           重新載入
@@ -123,7 +120,7 @@ onBeforeUnmount(() => {
           <li v-for="item in announcements" :key="item.id">
             <RouterLink
               :to="{ name: 'announcement-admin-editor', params: { announcementId: item.id } }"
-              class="block rounded-xl border border-border bg-card p-5 transition-colors hover:border-accent-caramel focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring sm:p-6"
+              class="block rounded-xl border border-border bg-card p-4 shadow-sm transition-colors hover:border-accent-caramel focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
             >
               <div class="flex flex-wrap items-center gap-2 text-sm">
                 <span class="font-semibold text-accent-caramel">{{
@@ -142,7 +139,9 @@ onBeforeUnmount(() => {
                   >受治理限制</span
                 >
               </div>
-              <h3 class="mt-3 break-words text-xl font-bold">{{ item.title || '未命名草稿' }}</h3>
+              <h3 class="mt-3 break-words font-semibold text-slate-950">
+                {{ item.title || '未命名草稿' }}
+              </h3>
               <p class="mt-3 text-sm text-muted-foreground">
                 最後更新：{{ formatDate(item.updatedAt) }} · 修訂版 {{ item.revision }}
               </p>
@@ -156,7 +155,7 @@ onBeforeUnmount(() => {
           <button
             v-if="nextCursor"
             type="button"
-            class="min-h-11 rounded-md border border-control px-5 disabled:opacity-60"
+            class="min-h-11 rounded-lg border border-control px-4 font-medium disabled:opacity-60"
             :disabled="moreLoading"
             @click="loadMore"
           >
@@ -165,5 +164,5 @@ onBeforeUnmount(() => {
         </div>
       </template>
     </section>
-  </main>
+  </section>
 </template>
