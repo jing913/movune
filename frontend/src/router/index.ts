@@ -14,12 +14,15 @@ import AnnouncementCenterView from '@/views/AnnouncementCenterView.vue'
 import AnnouncementDetailView from '@/views/AnnouncementDetailView.vue'
 import AnnouncementAdminListView from '@/views/admin/AnnouncementAdminListView.vue'
 import AnnouncementAdminEditorView from '@/views/admin/AnnouncementAdminEditorView.vue'
+import MemberAdminListView from '@/views/admin/MemberAdminListView.vue'
+import MemberAdminDetailView from '@/views/admin/MemberAdminDetailView.vue'
 import { useUserStore } from '@/stores/user'
 
 declare module 'vue-router' {
   interface RouteMeta {
     requiresAuth?: boolean
     requiresAnnouncementManagement?: boolean
+    requiresMemberRead?: boolean
   }
 }
 
@@ -105,6 +108,18 @@ const routes = [
     component: AnnouncementDetailView,
   },
   {
+    path: '/admin/members',
+    name: 'member-admin-list',
+    component: MemberAdminListView,
+    meta: { requiresAuth: true, requiresMemberRead: true },
+  },
+  {
+    path: '/admin/members/:memberId',
+    name: 'member-admin-detail',
+    component: MemberAdminDetailView,
+    meta: { requiresAuth: true, requiresMemberRead: true },
+  },
+  {
     path: '/admin/announcements',
     name: 'announcement-admin-list',
     component: AnnouncementAdminListView,
@@ -158,6 +173,10 @@ router.beforeEach(async (to) => {
     to.meta.requiresAnnouncementManagement &&
     userStore.currentUser?.capabilities.manageAnnouncements !== true
   ) {
+    return { path: '/' }
+  }
+
+  if (to.meta.requiresMemberRead && userStore.currentUser?.capabilities.viewMembers !== true) {
     return { path: '/' }
   }
 })

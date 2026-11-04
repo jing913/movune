@@ -849,6 +849,15 @@ watch(isMenuOpen, (isOpen) => {
                   帳號設定
                 </RouterLink>
                 <RouterLink
+                  v-if="userStore.currentUser.capabilities.viewMembers === true"
+                  to="/admin/members"
+                  class="mt-1 block border-t border-border rounded-md px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-surface"
+                  role="menuitem"
+                  @click="closeUserMenu()"
+                >
+                  會員管理
+                </RouterLink>
+                <RouterLink
                   v-if="userStore.currentUser.capabilities.manageAnnouncements === true"
                   to="/admin/announcements"
                   class="mt-1 block border-y border-border rounded-md px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-surface"
@@ -1030,11 +1039,37 @@ watch(isMenuOpen, (isOpen) => {
         </nav>
 
         <nav
-          v-if="userStore.currentUser.capabilities.manageAnnouncements === true"
+          v-if="
+            userStore.currentUser.capabilities.viewMembers === true ||
+            userStore.currentUser.capabilities.manageAnnouncements === true
+          "
           class="mt-3 border-y border-border py-3"
-          aria-label="公告管理"
+          aria-label="管理功能"
         >
-          <RouterLink v-slot="{ href, navigate }" to="/admin/announcements" custom>
+          <RouterLink
+            v-if="userStore.currentUser.capabilities.viewMembers === true"
+            v-slot="{ href, navigate }"
+            to="/admin/members"
+            custom
+          >
+            <a
+              :href="href"
+              :aria-current="route.path.startsWith('/admin/members') ? 'page' : undefined"
+              :class="[
+                'block min-h-11 rounded-md px-4 py-3 font-medium text-foreground transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                route.path.startsWith('/admin/members') ? 'bg-surface-raised' : '',
+              ]"
+              @click="handleMobileAccountNavigation($event, navigate)"
+            >
+              會員管理
+            </a>
+          </RouterLink>
+          <RouterLink
+            v-if="userStore.currentUser.capabilities.manageAnnouncements === true"
+            v-slot="{ href, navigate }"
+            to="/admin/announcements"
+            custom
+          >
             <a
               :href="href"
               :aria-current="route.path.startsWith('/admin/announcements') ? 'page' : undefined"

@@ -26,6 +26,7 @@ import {
   updateMessagingPrivacy,
 } from '../services/messagingPrivacyService.js'
 import { deriveAnnouncementCapabilities } from '../policies/announcementAuthorizationPolicy.js'
+import { deriveMemberReadCapabilities } from '../policies/memberReadAuthorizationPolicy.js'
 import {
   assertMemberSocialPairAccess,
   loadEffectiveBlockedUserIds,
@@ -80,6 +81,17 @@ export const serializeUser = (user: Express.User) => ({
   favoritesPublic: getFavoritesVisibility(user) === 'public',
   capabilities: deriveAnnouncementCapabilities(user),
 })
+
+export const serializeCurrentUser = async (user: Express.User, evaluatedAt: Date) => {
+  const serialized = serializeUser(user)
+  return {
+    ...serialized,
+    capabilities: {
+      ...serialized.capabilities,
+      ...(await deriveMemberReadCapabilities(user, evaluatedAt)),
+    },
+  }
+}
 
 const serializePublicUser = (user: Express.User) => ({
   _id: user._id,
@@ -314,14 +326,18 @@ export const getEncounterCandidates = async (
   }
 }
 
-export const getMe = (req: Request, res: Response) => {
+export const getMe = async (req: Request, res: Response, next: NextFunction) => {
   if (!req.user) {
     return res.status(StatusCodes.UNAUTHORIZED).json({ message: 'Unauthorized' })
   }
 
-  res.status(StatusCodes.OK).json({
-    user: serializeUser(req.user),
-  })
+  try {
+    res.status(StatusCodes.OK).json({
+      user: await serializeCurrentUser(req.user, new Date()),
+    })
+  } catch (error) {
+    next(error)
+  }
 }
 
 export const getMessagingPrivacy = (req: Request, res: Response, next: NextFunction) => {
@@ -387,7 +403,7 @@ export const updateFavoriteVisibility = async (
     await setFavoritesVisibility(req.user, req.body.favoritesPublic ? 'public' : 'private')
 
     return res.status(StatusCodes.OK).json({
-      user: serializeUser(req.user),
+      user: await serializeCurrentUser(req.user, new Date()),
     })
   } catch (error) {
     next(error)
@@ -409,7 +425,9 @@ export const updateProfile = async (
     req.user.bio = profile.bio
     await req.user.save()
 
-    return res.status(StatusCodes.OK).json({ user: serializeUser(req.user) })
+    return res
+      .status(StatusCodes.OK)
+      .json({ user: await serializeCurrentUser(req.user, new Date()) })
   } catch (error) {
     next(error)
   }

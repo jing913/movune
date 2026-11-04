@@ -13,6 +13,7 @@ export interface PublicUser {
 export interface User extends PublicUser {
   capabilities: {
     manageAnnouncements: boolean
+    viewMembers: boolean
   }
 }
 

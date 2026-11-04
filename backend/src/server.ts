@@ -24,6 +24,7 @@ import collectionRouter from './routes/collection.js'
 import registrationAcceptanceRouter from './routes/registrationAcceptance.js'
 import announcementRouter from './routes/announcement.js'
 import adminAnnouncementRouter from './routes/adminAnnouncement.js'
+import adminMemberRouter from './routes/adminMember.js'
 
 const app = express()
 const { verify } = jsonwebtoken
@@ -73,6 +74,7 @@ app.use('/api/follows', followRouter)
 app.use('/api/notifications', notificationRouter)
 app.use('/api/announcements', announcementRouter)
 app.use('/api/admin/announcements', adminAnnouncementRouter)
+app.use('/api/admin/members', adminMemberRouter)
 app.use('/api/inbox', inboxRouter)
 app.use('/api/direct-conversations', directRouter)
 app.use('/api/messages', messageRouter)
