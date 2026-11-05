@@ -543,7 +543,7 @@ onBeforeUnmount(() => {
         {{ successMessage }}
       </p>
       <div
-        v-if="record?.governanceStatus !== 'normal'"
+        v-if="record && record.governanceStatus !== 'normal'"
         class="mt-6 rounded-lg border border-destructive p-4"
         role="alert"
       >

@@ -275,4 +275,33 @@ describe('Admin Members frontend slice', () => {
     assert.match(announcementList, /bg-card p-4 shadow-sm/)
     assert.match(announcementForm, /bg-card p-4 shadow-sm/)
   })
+
+  it('shows the Announcement governance banner only for restricted existing records', async () => {
+    const announcementEditor = await source('../src/views/admin/AnnouncementAdminEditorView.vue')
+    const showsBanner = (record: null | { governanceStatus: 'normal' | 'exceptionally_removed' }) =>
+      record !== null && record.governanceStatus !== 'normal'
+
+    assert.equal(showsBanner(null), false, 'a new announcement must not show the banner')
+    assert.equal(
+      showsBanner({ governanceStatus: 'normal' }),
+      false,
+      'an existing normal announcement must not show the banner',
+    )
+    assert.equal(
+      showsBanner({ governanceStatus: 'exceptionally_removed' }),
+      true,
+      'an existing restricted announcement must show the banner',
+    )
+    assert.match(
+      announcementEditor,
+      /v-if="record && record\.governanceStatus !== 'normal'"[\s\S]*此公告受治理限制，無法在此工作區編輯。/,
+    )
+    assert.doesNotMatch(announcementEditor, /v-if="record\?\.governanceStatus !== 'normal'"/)
+    assert.match(announcementEditor, /v-else-if="record\?\.governanceStatus === 'normal'"/)
+    assert.match(
+      announcementEditor,
+      /record\?\.publicationStatus === 'withdrawn'/,
+      'a withdrawn announcement must keep its editor disabled',
+    )
+  })
 })
