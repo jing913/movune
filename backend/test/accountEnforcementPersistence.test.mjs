@@ -66,6 +66,7 @@ describe('Phase 9 Stage 1 enforcement persistence', () => {
       { guidelineRuleId: undefined },
       { guidelineVersion: undefined },
       { reversesDecisionId: userId() },
+      { memberFacingReasonSummary: 'Only reversals may carry this field.' },
     ]) {
       await assert.rejects(() => decision(overrides).validate())
     }
@@ -79,9 +80,47 @@ describe('Phase 9 Stage 1 enforcement persistence', () => {
     ]) {
       await assert.rejects(() => reversal(overrides).validate())
     }
+    await assert.doesNotReject(() =>
+      reversal({
+        operationId: 'reversal.persistence-1',
+        commandDigest: 'a'.repeat(64),
+      }).validate(),
+    )
+    await assert.rejects(() => reversal({ operationId: 'reversal.incomplete' }).validate())
+    await assert.rejects(() => reversal({ commandDigest: 'a'.repeat(64) }).validate())
+  })
+
+  it('validates optional member-facing reversal reasons without breaking legacy reversals', async () => {
+    await assert.doesNotReject(() => reversal().validate())
+    await assert.doesNotReject(() =>
+      reversal({ memberFacingReasonSummary: '已核准的會員可見撤銷理由。' }).validate(),
+    )
+    await assert.doesNotReject(() =>
+      reversal({ memberFacingReasonSummary: '😀'.repeat(1000) }).validate(),
+    )
+
+    for (const memberFacingReasonSummary of [
+      null,
+      42,
+      {},
+      '',
+      '   ',
+      ' untrimmed',
+      'untrimmed ',
+      '😀'.repeat(1001),
+    ]) {
+      await assert.rejects(() => reversal({ memberFacingReasonSummary }).validate())
+    }
   })
 
   it('validates structurally safe reason and guideline references', async () => {
+    await assert.doesNotReject(() =>
+      decision({
+        reasonCode: 'targeted_harassment',
+        guidelineRuleId: 'CG-001',
+        guidelineVersion: '1.0.0',
+      }).validate(),
+    )
     for (const overrides of [
       { reasonCode: '' },
       { reasonCode: 'Reporter selected Other' },
@@ -94,6 +133,106 @@ describe('Phase 9 Stage 1 enforcement persistence', () => {
     }
     await assert.rejects(() => reversal({ reasonCode: undefined }).validate())
     await assert.rejects(() => reversal({ reasonSummary: undefined }).validate())
+  })
+
+  it('allows reasoned No Action without a fabricated violation guideline', async () => {
+    await assert.doesNotReject(() =>
+      decision({
+        decisionType: 'no_action',
+        reasonCode: undefined,
+        guidelineRuleId: undefined,
+        guidelineVersion: undefined,
+      }).validate(),
+    )
+    await assert.doesNotReject(() =>
+      decision({ decisionType: 'no_action', reasonCode: undefined }).validate(),
+    )
+    await assert.rejects(() =>
+      decision({
+        decisionType: 'no_action',
+        guidelineRuleId: 'test-only.rule',
+        guidelineVersion: undefined,
+      }).validate(),
+    )
+    await assert.rejects(() =>
+      decision({
+        decisionType: 'formal_warning',
+        guidelineRuleId: undefined,
+        guidelineVersion: undefined,
+      }).validate(),
+    )
+    await assert.rejects(() =>
+      decision({ decisionType: 'formal_warning', reasonCode: undefined }).validate(),
+    )
+  })
+
+  it('preserves immutable Case Review provenance and one-initial-action indexes', async () => {
+    const schema = AccountEnforcementAction.schema
+    assert.equal(schema.path('reviewDecisionId').options.immutable, true)
+    assert.equal(schema.path('operationId').options.immutable, true)
+    assert.equal(schema.path('commandDigest').options.immutable, true)
+    assert.equal(schema.path('memberNoticeProvenance').options.immutable, true)
+    assert.equal(schema.path('memberFacingReasonSummary').options.immutable, true)
+
+    const indexes = schema.indexes()
+    assert.ok(
+      indexes.some(([keys, options]) => keys.reviewDecisionId === 1 && options.unique === true),
+    )
+    assert.ok(indexes.some(([keys, options]) => keys.operationId === 1 && options.unique === true))
+    const operationIndex = indexes.find(([keys]) => keys.operationId === 1)
+    assert.deepEqual(operationIndex?.[1].partialFilterExpression, {
+      operationId: { $exists: true },
+    })
+  })
+
+  it('defaults legacy records out and permits only trusted Stage B Formal Warning notice provenance', async () => {
+    await assert.doesNotReject(() => decision().validate())
+    await assert.doesNotReject(() =>
+      decision({
+        reviewDecisionId: userId(),
+        operationId: 'case.enforcement.persistence-1',
+        commandDigest: 'a'.repeat(64),
+        memberNoticeProvenance: 'stage_b_formal_warning_v1',
+      }).validate(),
+    )
+    await assert.rejects(() =>
+      decision({ memberNoticeProvenance: 'stage_b_formal_warning_v1' }).validate(),
+    )
+    await assert.rejects(() =>
+      decision({
+        reviewDecisionId: userId(),
+        operationId: 'case.enforcement.persistence-2',
+        commandDigest: 'b'.repeat(64),
+        memberNoticeProvenance: 'unknown_legacy_source',
+      }).validate(),
+    )
+    await assert.rejects(() =>
+      decision({
+        decisionType: 'no_action',
+        reviewDecisionId: userId(),
+        operationId: 'case.enforcement.persistence-3',
+        commandDigest: 'c'.repeat(64),
+        memberNoticeProvenance: 'stage_b_formal_warning_v1',
+      }).validate(),
+    )
+  })
+
+  it('hydrates historical records without inventing member-visible eligibility', () => {
+    const legacy = AccountEnforcementAction.hydrate({
+      _id: userId(),
+      targetUserId: userId(),
+      recordType: 'decision',
+      effectiveAt,
+      performedByUserId: userId(),
+      reasonCode: 'targeted_harassment',
+      reasonSummary: 'Historical internal summary remains internally readable.',
+      decisionType: 'formal_warning',
+      guidelineRuleId: 'CG-001',
+      guidelineVersion: '0.9.0',
+      createdAt: effectiveAt,
+    })
+    assert.equal(legacy.memberNoticeProvenance, undefined)
+    assert.equal(legacy.reasonSummary, 'Historical internal summary remains internally readable.')
   })
 
   it('declares every retained field immutable and omits updatedAt', () => {

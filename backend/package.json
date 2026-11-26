@@ -26,7 +26,9 @@
     "format": "prettier --write \"src/**/*.{ts,json}\" \"test/**/*.mjs\" package.json",
     "format:check": "prettier --check \"src/**/*.{ts,json}\" \"test/**/*.mjs\" package.json",
     "lint": "eslint src",
-    "test": "npm run build && node --test test/collectionDeletedRecovery.test.mjs test/collectionMovieMembershipLookup.test.mjs test/collectionMembershipApi.test.mjs test/collectionApi.test.mjs test/collectionPersistence.test.mjs test/collectionProjection.test.mjs test/contextualPeople.test.mjs test/discoveryPeople.test.mjs test/dnaMatch.test.mjs test/encounterPolicy.test.mjs test/favoritesResourceVisibility.test.mjs test/favoriteVisibility.test.mjs test/followNotification.test.mjs test/followPolicy.test.mjs test/formalRecommendation.test.mjs test/matchExplanation.test.mjs test/matchV1.test.mjs test/movieDna.test.mjs test/notificationPolicy.test.mjs test/peopleSort.test.mjs test/profilePolicy.test.mjs test/refreshToken.test.mjs test/messagingPolicy.test.mjs test/frontendConfiguration.test.mjs test/tmdbApi.test.mjs test/tmdbService.test.mjs test/messagingIntegration.test.mjs test/accountEnforcementPolicy.test.mjs test/accountEnforcementPersistence.test.mjs test/accountEnforcementIntegration.test.mjs test/identifierPolicy.test.mjs test/identifierClaimPersistence.test.mjs test/identifierClaimMigration.test.mjs test/registrationMigrationGate.test.mjs test/registrationService.test.mjs"
+    "test": "npm run build && node --test test/collectionDeletedRecovery.test.mjs test/collectionMovieMembershipLookup.test.mjs test/collectionMembershipApi.test.mjs test/collectionApi.test.mjs test/collectionPersistence.test.mjs test/collectionProjection.test.mjs test/contextualPeople.test.mjs test/discoveryPeople.test.mjs test/dnaMatch.test.mjs test/encounterPolicy.test.mjs test/favoritesResourceVisibility.test.mjs test/favoriteVisibility.test.mjs test/followNotification.test.mjs test/followPolicy.test.mjs test/formalRecommendation.test.mjs test/matchExplanation.test.mjs test/matchV1.test.mjs test/movieDna.test.mjs test/notificationPolicy.test.mjs test/peopleSort.test.mjs test/profilePolicy.test.mjs test/refreshToken.test.mjs test/messagingPolicy.test.mjs test/frontendConfiguration.test.mjs test/tmdbApi.test.mjs test/tmdbService.test.mjs test/messagingIntegration.test.mjs test/accountEnforcementPolicy.test.mjs test/accountEnforcementPersistence.test.mjs test/accountEnforcementIntegration.test.mjs test/identifierPolicy.test.mjs test/identifierClaimPersistence.test.mjs test/identifierClaimMigration.test.mjs test/registrationMigrationGate.test.mjs test/registrationService.test.mjs",
+    "migration:rev02-production": "node dist/tools/runRev02ProductionMigration.js",
+    "test:rev02:migration:offline": "node --test --test-concurrency=1 test/rev02ProductionMigration.test.mjs"
   },
   "engines": {
     "node": ">=24 <25",
@@ -44,6 +46,7 @@
     "express-rate-limit": "^8.6.2",
     "http-status-codes": "^2.3.0",
     "jsonwebtoken": "^9.0.3",
+    "mongodb": "7.5.0",
     "mongoose": "^9.9.3",
     "nodemailer": "^9.0.5",
     "passport": "^0.7.0",

@@ -5,6 +5,7 @@ import {
   getUser,
   getUsers,
   getMe,
+  getMyEnforcementNotices,
   getMessagingPrivacy,
   getMoviePeople,
   getMovieSpace,
@@ -25,6 +26,7 @@ const requireAuth = passport.authenticate('jwt', { session: false })
 router.get('/', requireAuth, getUsers)
 router.get('/recommendations', requireAuth, getFormalRecommendations)
 router.get('/me', requireAuth, getMe)
+router.get('/me/enforcement-notices', requireAuth, getMyEnforcementNotices)
 router.get('/me/privacy', requireAuth, getMessagingPrivacy)
 router.patch('/me/privacy', requireAuth, patchMessagingPrivacy)
 router.get('/me/blocked-users', requireAuth, getBlockedUsers)

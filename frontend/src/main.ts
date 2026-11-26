@@ -15,6 +15,4 @@ app.use(router)
 
 const userStore = useUserStore()
 
-void userStore.restoreAuth()
-
-app.mount('#app')
+void Promise.all([userStore.restoreAuth(), router.isReady()]).then(() => app.mount('#app'))

@@ -252,6 +252,109 @@ test(
           error.code === 'ACCOUNT_ENFORCEMENT_REVERSAL_TARGET_MISMATCH',
       )
 
+      const warning = await appendAccountEnforcementDecision({
+        targetUserId: target._id.toString(),
+        performedByUserId: actor._id.toString(),
+        decisionType: 'formal_warning',
+        effectiveAt: new Date('2035-02-01T00:00:00.000Z'),
+        reasonCode: 'test-only.warning',
+        reasonSummary: 'Minimum necessary test-only warning explanation.',
+        guidelineRuleId: 'test-only.rule',
+        guidelineVersion: 'test-only.v1',
+      })
+      const warningBeforeReversal = await AccountEnforcementAction.findById(warning.id).lean()
+      const warningReversal = await appendAccountEnforcementReversal({
+        targetUserId: target._id.toString(),
+        performedByUserId: actor._id.toString(),
+        reversesDecisionId: warning.id,
+        effectiveAt: new Date('2035-02-01T01:00:00.000Z'),
+        reasonCode: 'test-only.warning-reversal',
+        reasonSummary: 'Internal test-only warning reversal rationale.',
+        memberFacingReasonSummary: '已核准的會員可見撤銷理由。',
+      })
+      assert.equal(warningReversal.memberFacingReasonSummary, '已核准的會員可見撤銷理由。')
+      assert.deepEqual(
+        await AccountEnforcementAction.findById(warning.id).lean(),
+        warningBeforeReversal,
+      )
+      assert.equal(
+        (
+          await evaluateAccountEnforcementState(
+            target._id.toString(),
+            new Date('2035-02-01T01:00:00.000Z'),
+          )
+        ).status,
+        'active',
+      )
+
+      const warningWithoutApprovedReason = await appendAccountEnforcementDecision({
+        targetUserId: target._id.toString(),
+        performedByUserId: actor._id.toString(),
+        decisionType: 'formal_warning',
+        effectiveAt: new Date('2035-02-02T00:00:00.000Z'),
+        reasonCode: 'test-only.warning',
+        reasonSummary: 'Second minimum necessary test-only warning explanation.',
+        guidelineRuleId: 'test-only.rule',
+        guidelineVersion: 'test-only.v1',
+      })
+      await assert.rejects(
+        () =>
+          appendAccountEnforcementReversal({
+            targetUserId: target._id.toString(),
+            performedByUserId: actor._id.toString(),
+            reversesDecisionId: warningWithoutApprovedReason.id,
+            effectiveAt: new Date('2035-02-02T01:00:00.000Z'),
+            reasonCode: 'test-only.warning-reversal',
+            reasonSummary: 'Internal reason must not be used as a member-facing fallback.',
+          }),
+        (error) =>
+          error instanceof AccountEnforcementServiceError &&
+          error.code === 'ACCOUNT_ENFORCEMENT_INPUT_INVALID',
+      )
+
+      const expiredStart = new Date('2035-03-01T00:00:00.000Z')
+      const expiredEnd = new Date('2035-03-02T00:00:00.000Z')
+      const historicalCorrectionAt = new Date('2035-03-03T00:00:00.000Z')
+      const expiredSuspension = await appendAccountEnforcementDecision({
+        targetUserId: target._id.toString(),
+        performedByUserId: actor._id.toString(),
+        decisionType: 'temporary_suspension',
+        effectiveAt: expiredStart,
+        endsAt: expiredEnd,
+        reasonCode: 'test-only.expired-suspension',
+        reasonSummary: 'Minimum necessary expired suspension explanation.',
+        guidelineRuleId: 'test-only.rule',
+        guidelineVersion: 'test-only.v1',
+      })
+      const expiredBeforeCorrection = await AccountEnforcementAction.findById(
+        expiredSuspension.id,
+      ).lean()
+      await appendAccountEnforcementReversal({
+        targetUserId: target._id.toString(),
+        performedByUserId: actor._id.toString(),
+        reversesDecisionId: expiredSuspension.id,
+        effectiveAt: historicalCorrectionAt,
+        reasonCode: 'test-only.historical-correction',
+        reasonSummary: 'Minimum necessary historical correction explanation.',
+      })
+      assert.equal(
+        (await evaluateAccountEnforcementState(target._id.toString(), expiredStart)).status,
+        'suspended',
+      )
+      assert.equal(
+        (await evaluateAccountEnforcementState(target._id.toString(), expiredEnd)).status,
+        'active',
+      )
+      assert.equal(
+        (await evaluateAccountEnforcementState(target._id.toString(), historicalCorrectionAt))
+          .status,
+        'active',
+      )
+      assert.deepEqual(
+        await AccountEnforcementAction.findById(expiredSuspension.id).lean(),
+        expiredBeforeCorrection,
+      )
+
       assert.deepEqual(await snapshot(owned), socialBefore)
     } finally {
       await AccountEnforcementAction.deleteMany({ targetUserId: { $in: userIds } })

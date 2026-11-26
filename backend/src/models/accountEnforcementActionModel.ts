@@ -3,6 +3,7 @@ import {
   ACCOUNT_ENFORCEMENT_DECISION_TYPES,
   ENFORCEMENT_IDENTIFIER_MAX_LENGTH,
   ENFORCEMENT_IDENTIFIER_PATTERN,
+  ENFORCEMENT_GUIDELINE_RULE_PATTERN,
   ENFORCEMENT_REASON_SUMMARY_MAX_LENGTH,
   type AccountEnforcementDecisionType,
   type AccountEnforcementRecordType,
@@ -13,8 +14,13 @@ export interface IAccountEnforcementAction {
   recordType: AccountEnforcementRecordType
   effectiveAt: Date
   performedByUserId: Types.ObjectId
-  reasonCode: string
+  reviewDecisionId?: Types.ObjectId
+  operationId?: string
+  commandDigest?: string
+  memberNoticeProvenance?: typeof STAGE_B_MEMBER_NOTICE_PROVENANCE
+  reasonCode?: string
   reasonSummary: string
+  memberFacingReasonSummary?: string
   decisionType?: AccountEnforcementDecisionType
   guidelineRuleId?: string
   guidelineVersion?: string
@@ -23,10 +29,23 @@ export interface IAccountEnforcementAction {
   createdAt: Date
 }
 
+export const STAGE_B_MEMBER_NOTICE_PROVENANCE = 'stage_b_formal_warning_v1' as const
+
 type ValidationContext = Partial<IAccountEnforcementAction>
 
 const requiredForDecision = function (this: ValidationContext) {
   return this.recordType === 'decision'
+}
+
+const requiredForCodedRecord = function (this: ValidationContext) {
+  return (
+    this.recordType === 'reversal' ||
+    (this.recordType === 'decision' && this.decisionType !== 'no_action')
+  )
+}
+
+const requiredForViolationDecision = function (this: ValidationContext) {
+  return this.recordType === 'decision' && this.decisionType !== 'no_action'
 }
 
 const requiredForTemporarySuspension = function (this: ValidationContext) {
@@ -39,6 +58,18 @@ const requiredForReversal = function (this: ValidationContext) {
 
 const decisionOnly = function (this: ValidationContext, value: unknown) {
   return this.recordType === 'decision' || value == null
+}
+
+const trustedMemberNoticeOnly = function (this: ValidationContext, value: unknown) {
+  if (value == null) return true
+  return (
+    value === STAGE_B_MEMBER_NOTICE_PROVENANCE &&
+    this.recordType === 'decision' &&
+    this.decisionType === 'formal_warning' &&
+    this.reviewDecisionId != null &&
+    this.operationId != null &&
+    this.commandDigest != null
+  )
 }
 
 const reversalOnly = function (this: ValidationContext, value: unknown) {
@@ -54,11 +85,15 @@ const validEndTime = function (this: ValidationContext, value: unknown) {
 
 const identifierField = {
   type: String,
-  required: true,
   immutable: true,
   trim: true,
   maxlength: ENFORCEMENT_IDENTIFIER_MAX_LENGTH,
   match: ENFORCEMENT_IDENTIFIER_PATTERN,
+} as const
+
+const guidelineRuleField = {
+  ...identifierField,
+  match: ENFORCEMENT_GUIDELINE_RULE_PATTERN,
 } as const
 
 const accountEnforcementActionSchema = new Schema(
@@ -82,7 +117,37 @@ const accountEnforcementActionSchema = new Schema(
       required: true,
       immutable: true,
     },
-    reasonCode: identifierField,
+    reviewDecisionId: {
+      type: Schema.Types.ObjectId,
+      ref: 'FinalReviewDecision',
+      immutable: true,
+      validate: {
+        validator: decisionOnly,
+        message: 'reviewDecisionId is only supported for decisions',
+      },
+    },
+    operationId: {
+      ...identifierField,
+      required: false,
+    },
+    commandDigest: {
+      type: String,
+      immutable: true,
+      match: /^[a-f0-9]{64}$/,
+    },
+    memberNoticeProvenance: {
+      type: String,
+      enum: [STAGE_B_MEMBER_NOTICE_PROVENANCE],
+      immutable: true,
+      validate: {
+        validator: trustedMemberNoticeOnly,
+        message: 'memberNoticeProvenance requires a trusted Stage B Formal Warning command',
+      },
+    },
+    reasonCode: {
+      ...identifierField,
+      required: requiredForCodedRecord,
+    },
     reasonSummary: {
       type: String,
       required: true,
@@ -93,6 +158,26 @@ const accountEnforcementActionSchema = new Schema(
           value.length > 0 && [...value].length <= ENFORCEMENT_REASON_SUMMARY_MAX_LENGTH,
         message: `reasonSummary cannot exceed ${ENFORCEMENT_REASON_SUMMARY_MAX_LENGTH} characters`,
       },
+    },
+    memberFacingReasonSummary: {
+      type: String,
+      cast: false,
+      immutable: true,
+      validate: [
+        {
+          validator: reversalOnly,
+          message: 'memberFacingReasonSummary is only supported for reversals',
+        },
+        {
+          validator: (value: unknown) =>
+            value === undefined ||
+            (typeof value === 'string' &&
+              value === value.trim() &&
+              value.length > 0 &&
+              [...value].length <= ENFORCEMENT_REASON_SUMMARY_MAX_LENGTH),
+          message: `memberFacingReasonSummary cannot exceed ${ENFORCEMENT_REASON_SUMMARY_MAX_LENGTH} characters and must be non-empty and trimmed`,
+        },
+      ],
     },
     decisionType: {
       type: String,
@@ -105,8 +190,8 @@ const accountEnforcementActionSchema = new Schema(
       },
     },
     guidelineRuleId: {
-      ...identifierField,
-      required: requiredForDecision,
+      ...guidelineRuleField,
+      required: requiredForViolationDecision,
       validate: {
         validator: decisionOnly,
         message: 'guidelineRuleId is only supported for decisions',
@@ -114,7 +199,7 @@ const accountEnforcementActionSchema = new Schema(
     },
     guidelineVersion: {
       ...identifierField,
-      required: requiredForDecision,
+      required: requiredForViolationDecision,
       validate: {
         validator: decisionOnly,
         message: 'guidelineVersion is only supported for decisions',
@@ -147,6 +232,20 @@ const accountEnforcementActionSchema = new Schema(
 
 accountEnforcementActionSchema.index({ targetUserId: 1, effectiveAt: 1, _id: 1 })
 accountEnforcementActionSchema.index(
+  { reviewDecisionId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { recordType: 'decision', reviewDecisionId: { $exists: true } },
+  },
+)
+accountEnforcementActionSchema.index(
+  { operationId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { operationId: { $exists: true } },
+  },
+)
+accountEnforcementActionSchema.index(
   { reversesDecisionId: 1 },
   {
     unique: true,
@@ -178,6 +277,29 @@ accountEnforcementActionSchema.pre('bulkWrite', function (operations) {
 })
 accountEnforcementActionSchema.pre('save', function () {
   if (!this.isNew && this.isModified()) rejectMutation()
+})
+
+accountEnforcementActionSchema.pre('validate', function () {
+  if (this.recordType === 'reversal') {
+    const hasOperationId = this.operationId !== null && this.operationId !== undefined
+    const hasCommandDigest = this.commandDigest !== null && this.commandDigest !== undefined
+    if (hasOperationId !== hasCommandDigest) {
+      this.invalidate(
+        hasOperationId ? 'commandDigest' : 'operationId',
+        'Reversal operationId and commandDigest must be supplied together',
+      )
+    }
+  }
+
+  if (this.recordType !== 'decision' || this.decisionType !== 'no_action') return
+  const hasGuidelineRule = this.guidelineRuleId !== null && this.guidelineRuleId !== undefined
+  const hasGuidelineVersion = this.guidelineVersion !== null && this.guidelineVersion !== undefined
+  if (hasGuidelineRule !== hasGuidelineVersion) {
+    this.invalidate(
+      hasGuidelineRule ? 'guidelineVersion' : 'guidelineRuleId',
+      'No Action guideline rule and version must be supplied together',
+    )
+  }
 })
 
 export const AccountEnforcementAction = model<IAccountEnforcementAction>(

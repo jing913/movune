@@ -412,11 +412,15 @@ describe('Admin Members Read API', () => {
         account: 'administrator',
         displayName: 'Administrator',
         favoritesPublic: false,
+        caseReviewMutationEnabled: true,
+        memberEnforcementEnabled: true,
       },
       evaluatedAt,
     )
     assert.equal(serialized.capabilities.viewMembers, true)
-    assert.equal('viewReports' in serialized.capabilities, false)
+    assert.equal(serialized.capabilities.viewReports, true)
+    assert.equal(serialized.capabilities.reviewCases, true)
+    assert.equal(serialized.capabilities.enforceMembers, true)
     assert.equal(serialized.capabilities.manageAnnouncements, true)
     assert.equal('role' in serialized, false)
     assert.equal('enforcementHistory' in serialized, false)

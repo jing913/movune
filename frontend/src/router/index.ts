@@ -13,19 +13,26 @@ import InboxView from '@/views/InboxView.vue'
 import CollectionDetailView from '@/views/CollectionDetailView.vue'
 import AnnouncementCenterView from '@/views/AnnouncementCenterView.vue'
 import AnnouncementDetailView from '@/views/AnnouncementDetailView.vue'
+import EnforcementNoticesView from '@/views/EnforcementNoticesView.vue'
 import AnnouncementAdminListView from '@/views/admin/AnnouncementAdminListView.vue'
 import AnnouncementAdminEditorView from '@/views/admin/AnnouncementAdminEditorView.vue'
 import MemberAdminListView from '@/views/admin/MemberAdminListView.vue'
 import MemberAdminDetailView from '@/views/admin/MemberAdminDetailView.vue'
+import ReportAdminListView from '@/views/admin/ReportAdminListView.vue'
+import ReportAdminDetailView from '@/views/admin/ReportAdminDetailView.vue'
+import CaseAdminListView from '@/views/admin/CaseAdminListView.vue'
+import CaseAdminDetailView from '@/views/admin/CaseAdminDetailView.vue'
 import AdminLayout from '@/layouts/AdminLayout.vue'
 import { useUserStore } from '@/stores/user'
 import type { User } from '@/services/users'
 
 export type AdminCapability = keyof User['capabilities']
 
-export function firstAuthorizedAdminRoute(capabilities?: User['capabilities']) {
-  if (capabilities?.viewMembers === true) return { name: 'member-admin-list' }
-  if (capabilities?.manageAnnouncements === true) return { name: 'announcement-admin-list' }
+export function firstAuthorizedAdminRoute(capabilities: User['capabilities']) {
+  if (capabilities.viewReports === true) return { name: 'report-admin-list' }
+  if (capabilities.viewMembers === true) return { name: 'member-admin-list' }
+  if (capabilities.enforceMembers === true) return { name: 'member-enforcement-home' }
+  if (capabilities.manageAnnouncements === true) return { name: 'announcement-admin-list' }
   return { path: '/' }
 }
 
@@ -54,6 +61,9 @@ const routes: RouteRecordRaw[] = [
     path: '/collections/:id',
     name: 'collection-detail',
     component: CollectionDetailView,
+    meta: {
+      requiresAuth: true,
+    },
   },
   {
     path: '/movie-space',
@@ -86,6 +96,12 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
     },
+  },
+  {
+    path: '/account/enforcement-notices',
+    name: 'enforcement-notices',
+    component: EnforcementNoticesView,
+    meta: { requiresAuth: true },
   },
   {
     path: '/people/:id',
@@ -124,6 +140,42 @@ const routes: RouteRecordRaw[] = [
     component: AdminLayout,
     meta: { layout: 'admin', requiresAuth: true },
     children: [
+      {
+        path: 'reports',
+        name: 'report-admin-list',
+        component: ReportAdminListView,
+        meta: { requiresAuth: true, requiredAdminCapability: 'viewReports' },
+      },
+      {
+        path: 'reports/:reportId',
+        name: 'report-admin-detail',
+        component: ReportAdminDetailView,
+        meta: { requiresAuth: true, requiredAdminCapability: 'viewReports' },
+      },
+      {
+        path: 'cases',
+        name: 'case-admin-list',
+        component: CaseAdminListView,
+        meta: { requiresAuth: true, requiredAdminCapability: 'viewReports' },
+      },
+      {
+        path: 'cases/:reportId',
+        name: 'case-admin-detail',
+        component: CaseAdminDetailView,
+        meta: { requiresAuth: true, requiredAdminCapability: 'viewReports' },
+      },
+      {
+        path: 'enforcement',
+        name: 'member-enforcement-home',
+        component: MemberAdminDetailView,
+        meta: { requiresAuth: true, requiredAdminCapability: 'enforceMembers' },
+      },
+      {
+        path: 'enforcement/:memberId',
+        name: 'member-enforcement-detail',
+        component: MemberAdminDetailView,
+        meta: { requiresAuth: true, requiredAdminCapability: 'enforceMembers' },
+      },
       {
         path: 'members',
         name: 'member-admin-list',
@@ -189,7 +241,15 @@ router.beforeEach(async (to) => {
   }
 
   if (to.name === 'admin-home') {
-    return firstAuthorizedAdminRoute(userStore.currentUser?.capabilities)
+    return firstAuthorizedAdminRoute(
+      userStore.currentUser?.capabilities ?? {
+        viewMembers: false,
+        viewReports: false,
+        reviewCases: false,
+        enforceMembers: false,
+        manageAnnouncements: false,
+      },
+    )
   }
 
   const requiredCapability = to.meta.requiredAdminCapability

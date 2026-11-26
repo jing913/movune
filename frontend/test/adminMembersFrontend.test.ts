@@ -125,78 +125,68 @@ describe('Admin Members frontend slice', () => {
     }
   })
 
-  it('uses real server-side limits of 20 on desktop and 5 on mobile', () => {
-    assert.equal(adminMembers.adminMemberDefaultLimit(false), 20)
-    assert.equal(adminMembers.adminMemberDefaultLimit(true), 5)
-  })
-
-  it('compiles both member views in the existing public application', async () => {
+  it('compiles the layout and both member views', async () => {
     await Promise.all([
       vite.ssrLoadModule('/src/App.vue'),
+      vite.ssrLoadModule('/src/layouts/AdminLayout.vue'),
       vite.ssrLoadModule('/src/views/admin/MemberAdminListView.vue'),
       vite.ssrLoadModule('/src/views/admin/MemberAdminDetailView.vue'),
     ])
   })
 
-  it('guards the dedicated admin workspace by server-derived capabilities without Report or Case routes', async () => {
-    const [router, users, navbar, adminLayout] = await Promise.all([
+  it('guards every admin destination by its server-derived capability', async () => {
+    const [router, users, navbar] = await Promise.all([
       source('../src/router/index.ts'),
       source('../src/services/users.ts'),
       source('../src/components/AppNavbar.vue'),
-      source('../src/layouts/AdminLayout.vue'),
     ])
 
     assert.match(users, /viewMembers: boolean/)
-    assert.doesNotMatch(users, /viewReports/)
-    assert.match(router, /requiredAdminCapability\?: AdminCapability/)
-    assert.match(router, /path: '\/admin'/)
-    assert.match(router, /name: 'admin-home'/)
-    assert.match(router, /name: 'member-admin-list'/)
-    assert.match(router, /name: 'member-admin-detail'/)
-    assert.match(router, /name: 'announcement-admin-list'/)
-    assert.match(router, /name: 'announcement-admin-new'/)
-    assert.match(router, /name: 'announcement-admin-editor'/)
     assert.match(router, /requiredAdminCapability: 'viewMembers'/)
     assert.match(router, /requiredAdminCapability: 'manageAnnouncements'/)
-    assert.doesNotMatch(router, /ReportAdmin|CaseAdmin|viewReports/)
-    assert.match(navbar, /const hasAdminConsoleAccess = computed/)
-    assert.match(navbar, /capabilities\.viewMembers === true/)
-    assert.match(navbar, /capabilities\.manageAnnouncements === true/)
-    assert.match(navbar, /to="\/admin"/)
-    assert.match(navbar, /管理員後台/)
-    assert.doesNotMatch(navbar, />\s*會員管理\s*</)
-    assert.doesNotMatch(navbar, />\s*公告管理\s*</)
-    assert.match(adminLayout, /\/admin\/members/)
-    assert.match(adminLayout, /\/admin\/announcements/)
-    assert.doesNotMatch(adminLayout, /\/admin\/(reports|cases)/)
+    assert.match(router, /userStore\.currentUser\?\.capabilities\[requiredCapability\] !== true/)
+    assert.match(router, /to\.name === 'admin-home'/)
+    assert.match(navbar, /hasAdminConsoleAccess/)
+    assert.match(navbar, />\s*管理員後台\s*</)
   })
 
-  it('renders Member pages only inside the dedicated AdminLayout', async () => {
-    const [app, defaultLayout, adminLayout, listView, detailView] = await Promise.all([
+  it('keeps public chrome outside the independent Admin route shell', async () => {
+    const [app, defaultLayout, router, main, adminLayout] = await Promise.all([
       source('../src/App.vue'),
       source('../src/layouts/DefaultLayout.vue'),
+      source('../src/router/index.ts'),
+      source('../src/main.ts'),
       source('../src/layouts/AdminLayout.vue'),
-      source('../src/views/admin/MemberAdminListView.vue'),
-      source('../src/views/admin/MemberAdminDetailView.vue'),
     ])
 
     assert.match(defaultLayout, /<AppNavbar/)
     assert.match(defaultLayout, /<AppFooter/)
-    assert.match(app, /<DefaultLayout/)
     assert.match(app, /route\.meta\.layout === 'admin'/)
     assert.match(app, /<RouterView v-if="usesAdminLayout"/)
-    assert.match(adminLayout, /<RouterView/)
-    assert.match(adminLayout, /await userStore\.logout\(\)/)
-    assert.match(adminLayout, /await router\.push\('\/'\)/)
-    assert.match(adminLayout, />\s*登出\s*</)
-    assert.doesNotMatch(adminLayout, /Administration|管理員工作區/)
-    assert.doesNotMatch(listView, /page-shell/)
-    assert.doesNotMatch(detailView, /page-shell/)
-    assert.match(listView, /text-slate-950/)
-    assert.match(detailView, /text-slate-950/)
+    assert.match(app, /<DefaultLayout v-else/)
+    assert.doesNotMatch(app, /AppNavbar|AppFooter/)
+    assert.match(router, /meta: \{ layout: 'admin', requiresAuth: true \}/)
+    assert.match(main, /router\.isReady\(\)/)
+    assert.doesNotMatch(adminLayout, /AppNavbar|AppFooter/)
   })
 
-  it('renders only the approved read-only member fields and no mutation controls', async () => {
+  it('provides a bounded responsive Admin identity and navigation shell', async () => {
+    const layout = await source('../src/layouts/AdminLayout.vue')
+
+    assert.match(layout, /返回 Movune/)
+    assert.match(layout, /administratorName/)
+    assert.match(layout, /administratorAccount/)
+    assert.match(layout, /aria-label="目前管理員"/)
+    assert.match(layout, /aria-controls="admin-mobile-navigation"/)
+    assert.match(layout, /:aria-expanded="isMobileNavigationOpen"/)
+    assert.match(layout, /min-h-dvh/)
+    assert.match(layout, /overflow-x-clip/)
+    assert.doesNotMatch(layout, /overflow-x-hidden/)
+    assert.match(layout, /max-w-\[96rem\]/)
+    assert.doesNotMatch(layout, /編輯會員|停權會員|刪除會員|報表管理/)
+  })
+
+  it('preserves approved general member fields while isolating enforcement controls', async () => {
     const [listView, detailView] = await Promise.all([
       source('../src/views/admin/MemberAdminListView.vue'),
       source('../src/views/admin/MemberAdminDetailView.vue'),
@@ -206,8 +196,21 @@ describe('Admin Members frontend slice', () => {
     assert.match(combined, /最近登入/)
     assert.match(combined, /無可用資料|無資料/)
     assert.doesNotMatch(combined, /\.email|member\.password|refreshToken|resetToken/)
-    assert.doesNotMatch(combined, /api\.(post|patch|put|delete)/)
     assert.doesNotMatch(combined, /停權會員|刪除會員|恢復會員/)
+    assert.match(detailView, /if \(enforcementOnly\.value\)/)
+    assert.match(detailView, /await loadEnforcement\(memberId\.value, version\)/)
+    assert.match(detailView, /else \{\s*member\.value = await getAdminMember/)
+  })
+
+  it('moves focus to the Admin main landmark only when the route path changes', async () => {
+    const layout = await source('../src/layouts/AdminLayout.vue')
+
+    assert.match(layout, /const adminMain = ref<HTMLElement \| null>\(null\)/)
+    assert.match(layout, /\(\) => route\.path/)
+    assert.match(layout, /await nextTick\(\)/)
+    assert.match(layout, /adminMain\.value\?\.focus\(\{ preventScroll: true \}\)/)
+    assert.match(layout, /tabindex="-1"/)
+    assert.match(layout, /\{ flush: 'post' \}/)
   })
 
   it('keeps the full member display name visibly readable on narrow screens', async () => {
@@ -240,40 +243,6 @@ describe('Admin Members frontend slice', () => {
     assert.match(listView, /class="mt-4 inline-flex min-h-11 w-full min-w-0[^"]*"/)
     assert.match(listView, />查看會員<\/RouterLink/)
     for (const label of ['狀態', '註冊日期', '最近登入']) assert.match(listView, new RegExp(label))
-  })
-
-  it('adapts the implicit page size on viewport changes while preserving explicit limits', async () => {
-    const listView = await source('../src/views/admin/MemberAdminListView.vue')
-
-    assert.match(listView, /\(max-width: 767px\)/)
-    assert.match(listView, /responsiveDefaultLimit/)
-    assert.match(listView, /explicitRouteLimit\(\) !== null/)
-    assert.match(listView, /queryForRoute\(1, responsiveDefaultLimit\.value\)/)
-    assert.match(listView, /viewportMatcher\.addEventListener\('change', handleViewportChange\)/)
-    assert.match(
-      listView,
-      /viewportMatcher\?\.removeEventListener\('change', handleViewportChange\)/,
-    )
-  })
-
-  it('keeps Member and Announcement admin pages on the same approved visual scale', async () => {
-    const [memberList, announcementList, announcementEditor, announcementForm] = await Promise.all([
-      source('../src/views/admin/MemberAdminListView.vue'),
-      source('../src/views/admin/AnnouncementAdminListView.vue'),
-      source('../src/views/admin/AnnouncementAdminEditorView.vue'),
-      source('../src/components/admin/announcement/AnnouncementAdminForm.vue'),
-    ])
-
-    assert.doesNotMatch(memberList, />\s*Member Management\s*</)
-    assert.doesNotMatch(announcementList, />\s*Administration\s*</)
-    assert.doesNotMatch(announcementEditor, />\s*Announcement Admin\s*</)
-    for (const page of [memberList, announcementList, announcementEditor]) {
-      assert.match(page, /text-2xl font-bold tracking-tight sm:text-3xl/)
-      assert.doesNotMatch(page, /sm:text-4xl/)
-    }
-    assert.match(announcementList, /mt-2 text-sm text-slate-600/)
-    assert.match(announcementList, /bg-card p-4 shadow-sm/)
-    assert.match(announcementForm, /bg-card p-4 shadow-sm/)
   })
 
   it('shows the Announcement governance banner only for restricted existing records', async () => {

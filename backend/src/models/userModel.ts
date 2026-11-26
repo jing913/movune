@@ -11,6 +11,8 @@ export interface IUser {
   favoritesPublic?: boolean
   messageRequestPreference?: 'all_members' | 'followed_members'
   role: 'user' | 'admin'
+  caseReviewMutationEnabled: unknown
+  memberEnforcementEnabled: unknown
 }
 
 const userSchema = new Schema<IUser>(
@@ -56,6 +58,24 @@ const userSchema = new Schema<IUser>(
       type: String,
       default: 'user',
       enum: ['user', 'admin'],
+    },
+    caseReviewMutationEnabled: {
+      type: Schema.Types.Mixed,
+      required: true,
+      default: false,
+      validate: {
+        validator: (value: unknown) => typeof value === 'boolean',
+        message: 'caseReviewMutationEnabled must be a boolean',
+      },
+    },
+    memberEnforcementEnabled: {
+      type: Schema.Types.Mixed,
+      required: true,
+      default: false,
+      validate: {
+        validator: (value: unknown) => typeof value === 'boolean',
+        message: 'memberEnforcementEnabled must be a boolean',
+      },
     },
   },
   {

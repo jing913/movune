@@ -1,6 +1,7 @@
 export const ENFORCEMENT_IDENTIFIER_MAX_LENGTH = 128
 export const ENFORCEMENT_REASON_SUMMARY_MAX_LENGTH = 1000
 export const ENFORCEMENT_IDENTIFIER_PATTERN = /^[a-z0-9][a-z0-9._:-]{0,127}$/
+export const ENFORCEMENT_GUIDELINE_RULE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 
 export const ACCOUNT_ENFORCEMENT_DECISION_TYPES = [
   'no_action',
@@ -19,8 +20,12 @@ export type AccountEnforcementHistoryItem = Readonly<{
   recordType: AccountEnforcementRecordType
   effectiveAt: Date
   performedByUserId: string
-  reasonCode: string
+  reviewDecisionId?: string
+  operationId?: string
+  commandDigest?: string
+  reasonCode?: string
   reasonSummary: string
+  memberFacingReasonSummary?: string
   decisionType?: AccountEnforcementDecisionType
   guidelineRuleId?: string
   guidelineVersion?: string
@@ -58,6 +63,11 @@ const isIdentifier = (value: unknown): value is string =>
   value.length <= ENFORCEMENT_IDENTIFIER_MAX_LENGTH &&
   ENFORCEMENT_IDENTIFIER_PATTERN.test(value)
 
+const isGuidelineRuleIdentifier = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  value.length <= ENFORCEMENT_IDENTIFIER_MAX_LENGTH &&
+  ENFORCEMENT_GUIDELINE_RULE_PATTERN.test(value)
+
 const isReasonSummary = (value: unknown): value is string =>
   typeof value === 'string' &&
   value === value.trim() &&
@@ -90,16 +100,42 @@ const validateCommonFields = (item: AccountEnforcementHistoryItem) => {
     typeof item.performedByUserId === 'string' && item.performedByUserId.length > 0,
     'Performing user id is required',
   )
-  invariant(isIdentifier(item.reasonCode), 'Reason code is invalid')
   invariant(isReasonSummary(item.reasonSummary), 'Reason summary is invalid')
   invariant(isValidDate(item.createdAt), 'Creation time is invalid')
 }
 
 const validateDecision = (item: AccountEnforcementHistoryItem) => {
   invariant(isDecisionType(item.decisionType), 'Decision type is invalid')
-  invariant(isIdentifier(item.guidelineRuleId), 'Guideline rule id is invalid')
-  invariant(isIdentifier(item.guidelineVersion), 'Guideline version is invalid')
+  if (item.decisionType === 'no_action') {
+    invariant(
+      item.reasonCode === undefined || isIdentifier(item.reasonCode),
+      'Reason code is invalid',
+    )
+    const hasRule = item.guidelineRuleId !== undefined
+    const hasVersion = item.guidelineVersion !== undefined
+    invariant(hasRule === hasVersion, 'No Action guideline reference is incomplete')
+    if (hasRule) {
+      invariant(isGuidelineRuleIdentifier(item.guidelineRuleId), 'Guideline rule id is invalid')
+      invariant(isIdentifier(item.guidelineVersion), 'Guideline version is invalid')
+    }
+  } else {
+    invariant(isIdentifier(item.reasonCode), 'Reason code is invalid')
+    invariant(isGuidelineRuleIdentifier(item.guidelineRuleId), 'Guideline rule id is invalid')
+    invariant(isIdentifier(item.guidelineVersion), 'Guideline version is invalid')
+  }
+  invariant(
+    item.memberFacingReasonSummary === undefined,
+    'A decision cannot have a member-facing reversal reason',
+  )
   invariant(item.reversesDecisionId === undefined, 'A decision cannot reverse another decision')
+  if (item.reviewDecisionId !== undefined) {
+    invariant(item.reviewDecisionId.length > 0, 'Review decision id is invalid')
+    invariant(isIdentifier(item.operationId), 'Operation id is invalid')
+    invariant(
+      typeof item.commandDigest === 'string' && /^[a-f0-9]{64}$/.test(item.commandDigest),
+      'Command digest is invalid',
+    )
+  }
   if (item.decisionType === 'temporary_suspension') {
     invariant(isValidDate(item.endsAt), 'Temporary suspension end time is required')
     invariant(item.endsAt > item.effectiveAt, 'Temporary suspension end time must follow its start')
@@ -109,10 +145,18 @@ const validateDecision = (item: AccountEnforcementHistoryItem) => {
 }
 
 const validateReversalShape = (item: AccountEnforcementHistoryItem) => {
+  invariant(isIdentifier(item.reasonCode), 'Reason code is invalid')
+  invariant(
+    item.memberFacingReasonSummary === undefined || isReasonSummary(item.memberFacingReasonSummary),
+    'Member-facing reason summary is invalid',
+  )
   invariant(item.decisionType === undefined, 'A reversal cannot have a decision type')
   invariant(item.guidelineRuleId === undefined, 'A reversal cannot have a guideline rule id')
   invariant(item.guidelineVersion === undefined, 'A reversal cannot have a guideline version')
   invariant(item.endsAt === undefined, 'A reversal cannot have an end time')
+  invariant(item.reviewDecisionId === undefined, 'A reversal cannot reference a review decision')
+  invariant(item.operationId === undefined, 'A reversal cannot have an operation id')
+  invariant(item.commandDigest === undefined, 'A reversal cannot have a command digest')
   invariant(
     typeof item.reversesDecisionId === 'string' && item.reversesDecisionId.length > 0,
     'A reversal must reference a decision',
@@ -136,7 +180,8 @@ const validateHistory = (history: readonly AccountEnforcementHistoryItem[]) => {
     invariant(decision.recordType === 'decision', 'A reversal must reference a decision')
     invariant(decision.targetUserId === reversal.targetUserId, 'A reversal target does not match')
     invariant(
-      decision.decisionType === 'temporary_suspension' ||
+      decision.decisionType === 'formal_warning' ||
+        decision.decisionType === 'temporary_suspension' ||
         decision.decisionType === 'permanent_deactivation',
       'The referenced decision is not reversible',
     )

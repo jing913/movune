@@ -8,6 +8,57 @@ type JsonParseError = SyntaxError & {
   type?: unknown
 }
 
+const caseMutationJsonBodyProblem = (err: unknown, req: Request) => {
+  if (
+    req.method !== 'POST' ||
+    !/^\/api\/admin\/cases\/[^/]+\/(?:begin-review|finalize-review)$/.test(req.path) ||
+    !(err instanceof SyntaxError) ||
+    (err as JsonParseError).type !== 'entity.parse.failed' ||
+    typeof (err as JsonParseError).body !== 'string'
+  ) {
+    return null
+  }
+
+  return new ApiProblem(400, 'CASE_INPUT_INVALID', 'Case command input is invalid', {})
+}
+
+const caseEnforcementJsonBodyProblem = (err: unknown, req: Request) => {
+  if (
+    req.method !== 'POST' ||
+    !/^\/api\/admin\/cases\/[^/]+\/enforcement-decisions$/.test(req.path) ||
+    !(err instanceof SyntaxError) ||
+    (err as JsonParseError).type !== 'entity.parse.failed' ||
+    typeof (err as JsonParseError).body !== 'string'
+  ) {
+    return null
+  }
+
+  return new ApiProblem(
+    400,
+    'CASE_ENFORCEMENT_INPUT_INVALID',
+    'Enforcement command input is invalid',
+    {},
+  )
+}
+
+const reversalJsonBodyProblem = (err: unknown, req: Request) => {
+  if (
+    req.method !== 'POST' ||
+    !/^\/api\/admin\/enforcement-decisions\/[^/]+\/reversal$/.test(req.path) ||
+    !(err instanceof SyntaxError) ||
+    (err as JsonParseError).type !== 'entity.parse.failed' ||
+    typeof (err as JsonParseError).body !== 'string'
+  ) {
+    return null
+  }
+  return new ApiProblem(
+    400,
+    'ACCOUNT_ENFORCEMENT_REVERSAL_COMMAND_INPUT_INVALID',
+    'Reversal command input is invalid',
+    {},
+  )
+}
+
 const privacyPrimitiveBodyProblem = (err: unknown, req: Request) => {
   if (
     req.method !== 'PATCH' ||
@@ -56,7 +107,11 @@ const reportPrimitiveBodyProblem = (err: unknown, req: Request) => {
 
 export const errorHandler = (err: unknown, req: Request, res: Response, _next: NextFunction) => {
   const primitiveBodyProblem =
-    privacyPrimitiveBodyProblem(err, req) ?? reportPrimitiveBodyProblem(err, req)
+    reversalJsonBodyProblem(err, req) ??
+    caseEnforcementJsonBodyProblem(err, req) ??
+    caseMutationJsonBodyProblem(err, req) ??
+    privacyPrimitiveBodyProblem(err, req) ??
+    reportPrimitiveBodyProblem(err, req)
   if (primitiveBodyProblem) err = primitiveBodyProblem
 
   if (err instanceof ApiProblem) {

@@ -1,16 +1,33 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, LogOut, Megaphone, Menu, Users, X } from '@lucide/vue'
+import {
+  ArrowLeft,
+  ChevronDown,
+  ClipboardCheck,
+  Flag,
+  LogOut,
+  Megaphone,
+  Menu,
+  RotateCcw,
+  Users,
+  X,
+} from '@lucide/vue'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const isMobileNavigationOpen = ref(false)
+const isReviewCenterExpanded = ref(
+  route.path.startsWith('/admin/reports') || route.path.startsWith('/admin/cases'),
+)
 const adminMain = ref<HTMLElement | null>(null)
 
 const destinations = computed(() => [
+  ...(userStore.currentUser?.capabilities.enforceMembers === true
+    ? [{ to: '/admin/enforcement', label: '會員撤銷', icon: RotateCcw }]
+    : []),
   ...(userStore.currentUser?.capabilities.viewMembers === true
     ? [{ to: '/admin/members', label: '會員管理', icon: Users }]
     : []),
@@ -18,6 +35,9 @@ const destinations = computed(() => [
     ? [{ to: '/admin/announcements', label: '公告管理', icon: Megaphone }]
     : []),
 ])
+const canViewReports = computed(() => userStore.currentUser?.capabilities.viewReports === true)
+const isReportsActive = computed(() => route.path.startsWith('/admin/reports'))
+const isCasesActive = computed(() => route.path.startsWith('/admin/cases'))
 const administratorName = computed(
   () => userStore.currentUser?.displayName || userStore.currentUser?.account || '管理員',
 )
@@ -35,6 +55,9 @@ watch(
   () => route.path,
   async (path, previousPath) => {
     if (path === previousPath) return
+    if (path.startsWith('/admin/reports') || path.startsWith('/admin/cases')) {
+      isReviewCenterExpanded.value = true
+    }
     await nextTick()
     adminMain.value?.focus({ preventScroll: true })
   },
@@ -58,7 +81,10 @@ async function handleLogout() {
       <div class="flex min-h-0 flex-1 flex-col px-5 py-7">
         <p class="text-xs font-semibold tracking-[0.2em] text-amber-300 uppercase">Movune</p>
         <h1 class="mt-2 text-xl font-semibold">管理員後台</h1>
-        <div class="mt-5 flex min-w-0 items-center gap-3 border-y border-slate-800 py-4">
+        <div
+          class="mt-5 flex min-w-0 items-center gap-3 border-y border-slate-800 py-4"
+          aria-label="目前管理員"
+        >
           <span
             class="flex size-10 shrink-0 items-center justify-center rounded-full bg-amber-300 text-sm font-bold text-slate-950"
             aria-hidden="true"
@@ -73,6 +99,51 @@ async function handleLogout() {
           </div>
         </div>
         <nav class="mt-5 space-y-2" aria-label="管理員後台">
+          <div v-if="canViewReports" class="space-y-1">
+            <button
+              type="button"
+              class="flex min-h-11 w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-semibold tracking-wide text-slate-300 uppercase transition-colors hover:bg-slate-800 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
+              :aria-expanded="isReviewCenterExpanded"
+              aria-controls="desktop-review-center-navigation"
+              @click="isReviewCenterExpanded = !isReviewCenterExpanded"
+            >
+              <span>審核中心</span>
+              <ChevronDown
+                :class="['size-4 transition-transform', isReviewCenterExpanded && 'rotate-180']"
+                aria-hidden="true"
+              />
+            </button>
+            <div
+              v-show="isReviewCenterExpanded"
+              id="desktop-review-center-navigation"
+              class="space-y-1"
+            >
+              <RouterLink
+                to="/admin/reports"
+                :aria-current="isReportsActive ? 'page' : undefined"
+                :class="[
+                  'ml-2 flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                  isReportsActive
+                    ? 'bg-amber-300 text-slate-950'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                ]"
+              >
+                <Flag class="size-5" aria-hidden="true" />檢舉
+              </RouterLink>
+              <RouterLink
+                to="/admin/cases"
+                :aria-current="isCasesActive ? 'page' : undefined"
+                :class="[
+                  'ml-2 flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                  isCasesActive
+                    ? 'bg-amber-300 text-slate-950'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                ]"
+              >
+                <ClipboardCheck class="size-5" aria-hidden="true" />案件
+              </RouterLink>
+            </div>
+          </div>
           <RouterLink
             v-for="destination in destinations"
             :key="destination.to"
@@ -93,7 +164,7 @@ async function handleLogout() {
         <div class="mt-auto space-y-2 border-t border-slate-800 pt-5">
           <button
             type="button"
-            class="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-rose-300 transition-colors hover:bg-rose-950/60 hover:text-rose-100"
+            class="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-rose-300 transition-colors hover:bg-rose-950/60 hover:text-rose-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
             @click="handleLogout"
           >
             <LogOut class="size-5" aria-hidden="true" />
@@ -148,6 +219,51 @@ async function handleLogout() {
           class="mt-3 grid gap-2 border-t border-slate-200 pt-3"
           aria-label="管理員後台"
         >
+          <div v-if="canViewReports" class="grid gap-1">
+            <button
+              type="button"
+              class="flex min-h-11 w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-semibold tracking-wide text-slate-600 uppercase hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700"
+              :aria-expanded="isReviewCenterExpanded"
+              aria-controls="mobile-review-center-navigation"
+              @click="isReviewCenterExpanded = !isReviewCenterExpanded"
+            >
+              <span>審核中心</span>
+              <ChevronDown
+                :class="['size-4 transition-transform', isReviewCenterExpanded && 'rotate-180']"
+                aria-hidden="true"
+              />
+            </button>
+            <div
+              v-show="isReviewCenterExpanded"
+              id="mobile-review-center-navigation"
+              class="grid gap-1"
+            >
+              <RouterLink
+                to="/admin/reports"
+                :aria-current="isReportsActive ? 'page' : undefined"
+                :class="[
+                  'ml-2 flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 font-medium',
+                  isReportsActive
+                    ? 'bg-amber-100 text-amber-950'
+                    : 'text-slate-700 hover:bg-slate-100',
+                ]"
+              >
+                <Flag class="size-5" aria-hidden="true" />檢舉
+              </RouterLink>
+              <RouterLink
+                to="/admin/cases"
+                :aria-current="isCasesActive ? 'page' : undefined"
+                :class="[
+                  'ml-2 flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 font-medium',
+                  isCasesActive
+                    ? 'bg-amber-100 text-amber-950'
+                    : 'text-slate-700 hover:bg-slate-100',
+                ]"
+              >
+                <ClipboardCheck class="size-5" aria-hidden="true" />案件
+              </RouterLink>
+            </div>
+          </div>
           <RouterLink
             v-for="destination in destinations"
             :key="destination.to"
@@ -165,7 +281,7 @@ async function handleLogout() {
           </RouterLink>
           <button
             type="button"
-            class="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 font-medium text-rose-700 hover:bg-rose-50"
+            class="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 font-medium text-rose-700 hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700"
             @click="handleLogout"
           >
             <LogOut class="size-5" aria-hidden="true" />

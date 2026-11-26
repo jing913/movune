@@ -46,7 +46,13 @@ describe('Phase 9 Stage 1 account enforcement policy', () => {
   it('keeps empty, no-action, and warning histories active', () => {
     for (const history of [
       [],
-      [decision('no-action', 'no_action')],
+      [
+        decision('no-action', 'no_action', {
+          reasonCode: undefined,
+          guidelineRuleId: undefined,
+          guidelineVersion: undefined,
+        }),
+      ],
       [decision('warning', 'formal_warning')],
       [decision('warning', 'formal_warning'), decision('no-action', 'no_action')],
     ]) {
@@ -90,6 +96,61 @@ describe('Phase 9 Stage 1 account enforcement policy', () => {
     const after = evaluateAccountEnforcement(history, new Date(baseTime.valueOf() + hour))
     assert.deepEqual(after.activeRestrictionDecisionIds, ['second'])
     assert.equal(after.restrictionEndsAt.toISOString(), second.endsAt.toISOString())
+  })
+
+  it('accepts Formal Warning reversal without changing account restriction state', () => {
+    const warning = decision('warning', 'formal_warning')
+    const warningReversal = reversal('reverse-warning', warning.id, {
+      memberFacingReasonSummary: '已核准的會員可見撤銷理由。',
+    })
+    const history = [warning, warningReversal]
+
+    assert.equal(evaluateAccountEnforcement(history, baseTime).status, 'active')
+    assert.deepEqual(evaluateAccountEnforcement(history, warningReversal.effectiveAt), {
+      status: 'active',
+      evaluatedAt: warningReversal.effectiveAt,
+      governingDecisionId: null,
+      activeRestrictionDecisionIds: [],
+      restrictionEndsAt: null,
+    })
+  })
+
+  it('keeps an unrelated restriction active when a Formal Warning is reversed', () => {
+    const warning = decision('warning', 'formal_warning')
+    const activeSuspension = suspension('suspension', {
+      endsAt: new Date(baseTime.valueOf() + 4 * hour),
+    })
+    const history = [warning, activeSuspension, reversal('reverse-warning', warning.id)]
+
+    const state = evaluateAccountEnforcement(history, new Date(baseTime.valueOf() + hour))
+    assert.equal(state.status, 'suspended')
+    assert.deepEqual(state.activeRestrictionDecisionIds, ['suspension'])
+  })
+
+  it('preserves an expired suspension timeline when reversed as a historical correction', () => {
+    const start = new Date(baseTime.valueOf() + hour)
+    const end = new Date(baseTime.valueOf() + 2 * hour)
+    const correctedAt = new Date(baseTime.valueOf() + 3 * hour)
+    const original = suspension('expired', { effectiveAt: start, endsAt: end })
+    const originalSnapshot = structuredClone(original)
+    const history = [
+      original,
+      reversal('historical-correction', original.id, { effectiveAt: correctedAt }),
+    ]
+
+    assert.equal(
+      evaluateAccountEnforcement(history, new Date(start.valueOf() - 1)).status,
+      'active',
+    )
+    assert.equal(evaluateAccountEnforcement(history, start).status, 'suspended')
+    assert.equal(
+      evaluateAccountEnforcement(history, new Date(end.valueOf() - 1)).status,
+      'suspended',
+    )
+    assert.equal(evaluateAccountEnforcement(history, end).status, 'active')
+    assert.equal(evaluateAccountEnforcement(history, correctedAt).status, 'active')
+    assert.deepEqual(original, originalSnapshot)
+    assert.equal(original.endsAt.toISOString(), end.toISOString())
   })
 
   it('gives deactivation precedence and reveals an underlying suspension after reversal', () => {
@@ -149,13 +210,29 @@ describe('Phase 9 Stage 1 account enforcement policy', () => {
   it('rejects corrupt persisted history explicitly', () => {
     const corruptHistories = [
       [reversal('missing', 'absent')],
-      [decision('warning', 'formal_warning'), reversal('reverse-warning', 'warning')],
+      [
+        decision('no-action', 'no_action', {
+          reasonCode: undefined,
+          guidelineRuleId: undefined,
+          guidelineVersion: undefined,
+        }),
+        reversal('reverse-no-action', 'no-action'),
+      ],
       [suspension('target'), reversal('wrong-user', 'target', { targetUserId: 'test-only-other' })],
       [
         suspension('target'),
         reversal('first-reversal', 'target'),
         reversal('second-reversal', 'target', {
           effectiveAt: new Date(baseTime.valueOf() + 2 * hour),
+        }),
+      ],
+      [
+        suspension('target'),
+        reversal('predates', 'target', { effectiveAt: new Date(baseTime.valueOf() - 1) }),
+      ],
+      [
+        decision('warning', 'formal_warning', {
+          memberFacingReasonSummary: 'not-valid-on-a-decision',
         }),
       ],
       [suspension('invalid-window', { endsAt: baseTime })],

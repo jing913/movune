@@ -1,10 +1,11 @@
-import { Types, isObjectIdOrHexString } from 'mongoose'
+import { Types, isObjectIdOrHexString, type ClientSession } from 'mongoose'
 import {
   AccountEnforcementAction,
   type IAccountEnforcementAction,
 } from '../models/accountEnforcementActionModel.js'
 import { User } from '../models/userModel.js'
 import {
+  ENFORCEMENT_REASON_SUMMARY_MAX_LENGTH,
   evaluateAccountEnforcement,
   type AccountEnforcementDecisionType,
   type AccountEnforcementHistoryItem,
@@ -16,10 +17,10 @@ export type AppendAccountEnforcementDecisionInput = Readonly<{
   decisionType: AccountEnforcementDecisionType
   effectiveAt: Date
   endsAt?: Date
-  reasonCode: string
+  reasonCode?: string
   reasonSummary: string
-  guidelineRuleId: string
-  guidelineVersion: string
+  guidelineRuleId?: string
+  guidelineVersion?: string
 }>
 
 export type AppendAccountEnforcementReversalInput = Readonly<{
@@ -29,6 +30,7 @@ export type AppendAccountEnforcementReversalInput = Readonly<{
   effectiveAt: Date
   reasonCode: string
   reasonSummary: string
+  memberFacingReasonSummary?: string
 }>
 
 export type AccountEnforcementServiceErrorCode =
@@ -76,6 +78,12 @@ const requireUsers = async (targetUserId: Types.ObjectId, performedByUserId: Typ
 const isDuplicateKeyError = (error: unknown) =>
   typeof error === 'object' && error !== null && 'code' in error && error.code === 11000
 
+const isMemberFacingReasonSummary = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  value === value.trim() &&
+  value.length > 0 &&
+  [...value].length <= ENFORCEMENT_REASON_SUMMARY_MAX_LENGTH
+
 const toHistoryItem = (
   action: IAccountEnforcementAction & { _id: Types.ObjectId },
 ): AccountEnforcementHistoryItem => ({
@@ -84,8 +92,18 @@ const toHistoryItem = (
   recordType: action.recordType,
   effectiveAt: new Date(action.effectiveAt),
   performedByUserId: action.performedByUserId.toString(),
-  reasonCode: action.reasonCode,
+  ...(action.reviewDecisionId ? { reviewDecisionId: action.reviewDecisionId.toString() } : {}),
+  ...(action.recordType === 'decision' && action.operationId
+    ? { operationId: action.operationId }
+    : {}),
+  ...(action.recordType === 'decision' && action.commandDigest
+    ? { commandDigest: action.commandDigest }
+    : {}),
+  ...(action.reasonCode ? { reasonCode: action.reasonCode } : {}),
   reasonSummary: action.reasonSummary,
+  ...(action.memberFacingReasonSummary !== undefined
+    ? { memberFacingReasonSummary: action.memberFacingReasonSummary }
+    : {}),
   ...(action.decisionType ? { decisionType: action.decisionType } : {}),
   ...(action.guidelineRuleId ? { guidelineRuleId: action.guidelineRuleId } : {}),
   ...(action.guidelineVersion ? { guidelineVersion: action.guidelineVersion } : {}),
@@ -107,11 +125,11 @@ export const appendAccountEnforcementDecision = async (
     recordType: 'decision',
     effectiveAt: input.effectiveAt,
     performedByUserId,
-    reasonCode: input.reasonCode,
+    ...(input.reasonCode ? { reasonCode: input.reasonCode } : {}),
     reasonSummary: input.reasonSummary,
     decisionType: input.decisionType,
-    guidelineRuleId: input.guidelineRuleId,
-    guidelineVersion: input.guidelineVersion,
+    ...(input.guidelineRuleId ? { guidelineRuleId: input.guidelineRuleId } : {}),
+    ...(input.guidelineVersion ? { guidelineVersion: input.guidelineVersion } : {}),
     ...(input.endsAt ? { endsAt: input.endsAt } : {}),
   })
   return toHistoryItem(action)
@@ -139,12 +157,22 @@ export const appendAccountEnforcementReversal = async (
     )
   }
   if (
+    decision.decisionType !== 'formal_warning' &&
     decision.decisionType !== 'temporary_suspension' &&
     decision.decisionType !== 'permanent_deactivation'
   ) {
     throw new AccountEnforcementServiceError(
       'ACCOUNT_ENFORCEMENT_DECISION_NOT_REVERSIBLE',
-      'The referenced decision is not a restriction',
+      'The referenced decision is not reversible',
+    )
+  }
+  if (
+    decision.decisionType === 'formal_warning' &&
+    !isMemberFacingReasonSummary(input.memberFacingReasonSummary)
+  ) {
+    throw new AccountEnforcementServiceError(
+      'ACCOUNT_ENFORCEMENT_INPUT_INVALID',
+      'A Formal Warning reversal requires an approved member-facing reason',
     )
   }
   if (input.effectiveAt < decision.effectiveAt) {
@@ -162,6 +190,9 @@ export const appendAccountEnforcementReversal = async (
       performedByUserId,
       reasonCode: input.reasonCode,
       reasonSummary: input.reasonSummary,
+      ...(input.memberFacingReasonSummary !== undefined
+        ? { memberFacingReasonSummary: input.memberFacingReasonSummary }
+        : {}),
       reversesDecisionId,
     })
     return toHistoryItem(action)
@@ -176,15 +207,27 @@ export const appendAccountEnforcementReversal = async (
   }
 }
 
-export const loadAccountEnforcementHistory = async (targetUserIdValue: string) => {
+export type AccountEnforcementReadOptions = Readonly<{ session?: ClientSession }>
+
+export const loadAccountEnforcementHistory = async (
+  targetUserIdValue: string,
+  options: AccountEnforcementReadOptions = {},
+) => {
   const targetUserId = requireObjectId(targetUserIdValue, 'targetUserId')
-  const actions = await AccountEnforcementAction.find({ targetUserId })
-    .sort({ effectiveAt: 1, _id: 1 })
-    .lean()
+  let query = AccountEnforcementAction.find({ targetUserId }).sort({ effectiveAt: 1, _id: 1 })
+  if (options.session) query = query.session(options.session)
+  const actions = await query.lean()
   return actions.map((action) =>
     toHistoryItem(action as IAccountEnforcementAction & { _id: Types.ObjectId }),
   )
 }
 
-export const evaluateAccountEnforcementState = async (targetUserId: string, evaluatedAt: Date) =>
-  evaluateAccountEnforcement(await loadAccountEnforcementHistory(targetUserId), evaluatedAt)
+export const evaluateAccountEnforcementState = async (
+  targetUserId: string,
+  evaluatedAt: Date,
+  options: AccountEnforcementReadOptions = {},
+) =>
+  evaluateAccountEnforcement(
+    await loadAccountEnforcementHistory(targetUserId, options),
+    evaluatedAt,
+  )

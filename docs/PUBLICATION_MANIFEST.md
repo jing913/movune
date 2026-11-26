@@ -4,12 +4,12 @@ This document records the reviewable source boundary for the Movune public portf
 
 ## Source boundary
 
-- Authorized application source snapshot: `b9cfb459980af0b4b21e70f89420a0ca0aab7b69`
-- Public Production baseline used to prepare the candidate: `5c58dc7d7f9c9d2e0b33f87db861dc08f5a4e928`
-- Initial curated source-candidate commit: `690c2da9b6e7195b3e324ec7e28852311f4a15da`
+- Canonical private parent: `bf2f0c9f441e6b8e1899880a909ece5e45986e1f` plus the three accepted uncommitted migration corrections recorded by the Batch 3 candidate manifest
+- Public baseline used to prepare the isolated candidate: `c2979fdbb3f4c2bdd8376ed789129532cac318bd`
+- Combined REV-02 release baseline: `579be67aa7dab091ce68168026c886a7a1709b5a`
 - Candidate status at preparation: local and not deployed
 
-Application files were selected from the committed authorized snapshot. Uncommitted work and later development were not used.
+Application files are selected by the generated bounded publication manifest. It preserves public-specific content, includes accepted REV-02 and required Item 4 dependency paths, and records every selective adaptation. The unrelated dirty public worktree and private untracked operational `scripts/` are not used.
 
 ## Publication scope
 
@@ -74,19 +74,18 @@ The prepared Pages workflow obtains the public Production API origin from the no
 - `.github/workflows/ci.yml` validates pull requests and manual runs only; it has no deployment job or deployment permission.
 - `.github/workflows/deploy-production.yml` has only a manual `workflow_dispatch` trigger, accepts no arbitrary ref input, requires `main`, and records the exact dispatched commit used for the build.
 - The Pages artifact is produced from `frontend/dist`; the existing frontend post-build step creates the SPA `404.html` fallback.
-- GitHub Pages remains configured remotely to deploy the current `main` root. The prepared workflow is local, unpushed, undispatched, and not active.
-- A later authorized activation must set `VITE_API_BASE_URL` and change the Pages source to GitHub Actions before public source is merged to `main`; otherwise the current branch-source binding would still deploy an ordinary `main` push.
+- GitHub Pages remote source was directly read back as **GitHub Actions** on 2026-11-25. The last observed Pages deployment used `Deploy Movune Production` at public commit `c2979fdbb3f4c2bdd8376ed789129532cac318bd`.
+- The checked-in `.github/workflows/deploy-production.yml` uses `workflow_dispatch`; an ordinary push does not invoke that Pages workflow. A later authorized release must dispatch it separately from the exact approved public commit.
 - Render deployment remains outside this frontend release boundary.
 
 ## Prepared Render release boundary
 
-- The current Production service remains bound to the private `jing913/movune-source` repository on `demo/ui-preview`; the prepared public target is `jing913/movune` on `main`, rooted at `backend`.
+- The current Production service is already bound to public `jing913/movune` on `main`, rooted at `backend`.
 - Render Auto Deploy is currently off and must remain off. Neither an ordinary private-source push nor an ordinary public-source push is release authorization.
 - No Render API key, deploy hook, or GitHub Actions backend deployment job is included in this candidate.
-- The one-time repository-binding change is explicitly classified as a Production release action because Render documents that changing a backing repository automatically triggers a deploy.
-- After migration, routine backend releases use Render Dashboard's **Deploy a specific commit** control and record the public SHA and Render deployment metadata.
+- Batch 3 does not change the repository binding. The backend release uses Render Dashboard's **Deploy a specific commit** control and records the public SHA and Render deployment metadata.
 - The existing Production environment was compared by variable name only. No Production value, hook URL, or credential was copied into this repository.
-- The backend defines Mongoose indexes and does not disable automatic index creation. Production index compatibility is therefore a mandatory pre-release Gate C; this preparation does not connect to or mutate the Production database.
+- The backend explicitly uses Mongoose `autoIndex: false` and `autoCreate: false`; deployment commands do not run migrations. Accepted Batch 2 migration and reconciliation evidence closes the current REV-02 database/index work while preserving its documented readback limitations. Batch 3 preparation does not connect to or mutate Production.
 - The full future procedure and rollback limitations are recorded in [Release runbook](RELEASE_RUNBOOK.md). It is prepared documentation only and has not been activated.
 
 ## Documentation boundary

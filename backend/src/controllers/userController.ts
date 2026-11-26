@@ -27,12 +27,16 @@ import {
 } from '../services/messagingPrivacyService.js'
 import { deriveAnnouncementCapabilities } from '../policies/announcementAuthorizationPolicy.js'
 import { deriveMemberReadCapabilities } from '../policies/memberReadAuthorizationPolicy.js'
+import { deriveReportReviewCapabilities } from '../policies/reportReviewAuthorizationPolicy.js'
+import { deriveCaseReviewMutationCapabilities } from '../policies/caseReviewAuthorizationPolicy.js'
+import { deriveMemberEnforcementCapabilities } from '../policies/memberEnforcementAuthorizationPolicy.js'
 import {
   assertMemberSocialPairAccess,
   loadEffectiveBlockedUserIds,
   memberSocialResourceNotFound,
 } from '../services/memberSocialAccessService.js'
 import { SOCIAL_DISCOVERY_ELIGIBILITY_MATCH } from '../services/socialDiscoveryEligibility.js'
+import { listMemberEnforcementNotices } from '../services/memberEnforcementNoticeService.js'
 
 type UserParams = {
   id: string
@@ -89,6 +93,9 @@ export const serializeCurrentUser = async (user: Express.User, evaluatedAt: Date
     capabilities: {
       ...serialized.capabilities,
       ...(await deriveMemberReadCapabilities(user, evaluatedAt)),
+      ...(await deriveReportReviewCapabilities(user, evaluatedAt)),
+      ...(await deriveCaseReviewMutationCapabilities(user, evaluatedAt)),
+      ...(await deriveMemberEnforcementCapabilities(user, evaluatedAt)),
     },
   }
 }
@@ -334,6 +341,23 @@ export const getMe = async (req: Request, res: Response, next: NextFunction) => 
   try {
     res.status(StatusCodes.OK).json({
       user: await serializeCurrentUser(req.user, new Date()),
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+export const getMyEnforcementNotices = async (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return res.status(StatusCodes.UNAUTHORIZED).json({ message: 'Unauthorized' })
+  }
+  try {
+    const notices = await listMemberEnforcementNotices(req.user._id.toString())
+    return res.status(StatusCodes.OK).json({
+      notices: notices.map((notice) => ({
+        ...notice,
+        recordedAt: notice.recordedAt.toISOString(),
+      })),
     })
   } catch (error) {
     next(error)

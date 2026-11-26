@@ -74,6 +74,7 @@ type MobileNavigationDestination =
   | '/movie-space'
   | '/movie-space?view=favorites'
   | '/movie-space?view=settings'
+  | '/account/enforcement-notices'
 
 const primaryMobileNavigationItems = [
   { to: '/', label: '首頁' },
@@ -854,6 +855,14 @@ watch(isMenuOpen, (isOpen) => {
                   帳號設定
                 </RouterLink>
                 <RouterLink
+                  to="/account/enforcement-notices"
+                  class="mt-1 block rounded-md px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-surface"
+                  role="menuitem"
+                  @click="closeUserMenu()"
+                >
+                  正式警告紀錄
+                </RouterLink>
+                <RouterLink
                   v-if="hasAdminConsoleAccess"
                   to="/admin"
                   class="mt-1 block border-y border-border rounded-md px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-surface"
@@ -1030,6 +1039,18 @@ watch(isMenuOpen, (isOpen) => {
               @click="handleMobileAccountNavigation($event, navigate)"
             >
               帳號設定
+            </a>
+          </RouterLink>
+          <RouterLink v-slot="{ href, navigate }" to="/account/enforcement-notices" custom>
+            <a
+              :href="href"
+              :aria-current="
+                isMobileDestinationCurrent('/account/enforcement-notices') ? 'page' : undefined
+              "
+              class="mt-1 block min-h-11 rounded-md px-4 py-3 font-medium text-foreground transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              @click="handleMobileAccountNavigation($event, navigate)"
+            >
+              正式警告紀錄
             </a>
           </RouterLink>
         </nav>

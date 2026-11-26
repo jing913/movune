@@ -14,6 +14,9 @@ export interface User extends PublicUser {
   capabilities: {
     manageAnnouncements: boolean
     viewMembers: boolean
+    viewReports: boolean
+    reviewCases: boolean
+    enforceMembers: boolean
   }
 }
 
@@ -130,6 +133,25 @@ interface DnaMatchResponse {
 
 interface UserResponse {
   user: User
+}
+
+export interface MemberEnforcementNotice {
+  id: string
+  actionType: 'formal_warning'
+  status: 'recorded' | 'reversed' | 'legacy_reversed'
+  recordedAt: string
+  reason: string
+  guideline: { ruleId: string; version: string; title: string }
+  reversedAt?: string
+  reversalReason?: string
+}
+
+export async function getMyEnforcementNotices(accessToken: string) {
+  const response = await api.get<{ notices: MemberEnforcementNotice[] }>(
+    '/api/users/me/enforcement-notices',
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  )
+  return response.data.notices
 }
 
 export async function updateProfile(
